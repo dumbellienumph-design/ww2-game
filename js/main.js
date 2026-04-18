@@ -45,6 +45,17 @@ class Game {
         this.isLoaded = false;
         this.isGameOver = false;
         
+        this.tips = [
+            "TIP: Use Tanks to provide cover for infantry when approaching MG nests.",
+            "TIP: Capture strategic points to bleed the enemy's reinforcement tickets.",
+            "TIP: Helicopter support can clear rooftops and hidden snipers quickly.",
+            "TIP: Listen for the whistle of incoming artillery—take cover immediately.",
+            "TIP: Your AI allies will follow you to objectives—lead the charge!",
+            "TIP: Use Right-Click to zoom in for more accurate rifle shots.",
+            "TIP: Press F to enter or exit available vehicles on the battlefield.",
+            "TIP: The mini-map shows friendly units in green and detected enemies in red."
+        ];
+        
         this.initUI();
         
         window.addEventListener('resize', () => this.onWindowResize());
@@ -57,20 +68,16 @@ class Game {
         const loadingScreen = document.getElementById('loading-screen');
         const btnBegin = document.getElementById('btn-begin');
 
-        // The game WAITS here until the user interacts
         btnBegin.addEventListener('click', () => {
             homeScreen.classList.add('hidden');
             loadingScreen.classList.remove('hidden');
             
-            // Start the "Warm Anthem" music immediately
             this.audio.startAudioContext();
-            this.startMusicSequence();
             
-            // Trigger the synchronized 0-100% loading process
+            // Start the music and the loading simultaneously
             this.loadGame();
         });
 
-        // Resume button for ESC menu
         const btnResume = document.getElementById('btn-resume');
         if (btnResume) {
             btnResume.addEventListener('click', () => {
@@ -80,10 +87,17 @@ class Game {
         }
     }
 
-    async startMusicSequence() {
-        // Load the anthem first as requested
-        await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
-        this.audio.play('anthem');
+    startTipCycle() {
+        const tipElement = document.getElementById('loading-tip');
+        let tipIndex = 0;
+        this.tipInterval = setInterval(() => {
+            tipIndex = (tipIndex + 1) % this.tips.length;
+            tipElement.style.opacity = 0;
+            setTimeout(() => {
+                tipElement.innerText = this.tips[tipIndex];
+                tipElement.style.opacity = 1;
+            }, 500);
+        }, 4000);
     }
 
     async loadGame() {
@@ -91,6 +105,8 @@ class Game {
         const loadingStatus = document.getElementById('loading-status');
         const loadingPercent = document.getElementById('loading-percentage');
         
+        this.startTipCycle();
+
         let progress = 0;
         const updateUI = (p, status) => {
             progress = Math.max(progress, p);
@@ -99,50 +115,54 @@ class Game {
             loadingPercent.innerText = `${displayP}%`;
             if (status) {
                 loadingStatus.classList.remove('typewriter');
-                void loadingStatus.offsetWidth; // Force reflow for animation
+                void loadingStatus.offsetWidth; 
                 loadingStatus.innerText = status;
                 loadingStatus.classList.add('typewriter');
             }
         };
 
-        // Yield function to ensure the browser paints the progress bar
         const yieldThread = () => new Promise(resolve => requestAnimationFrame(resolve));
 
-        // --- STEP 1: Terrain & Environment (0-15%) ---
-        updateUI(5, "ANALYZING TERRAIN DATA...");
+        // --- STEP 1: LOAD ANTHEM AND START PLAYING IMMEDIATELY (0-10%) ---
+        updateUI(2, "INITIALIZING FIELD AUDIO...");
+        await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
+        this.audio.play('anthem');
+        updateUI(10, "ANTHEM BROADCASTING...");
+
+        // --- STEP 2: Terrain & Environment (10-25%) ---
+        updateUI(15, "ANALYZING TERRAIN DATA...");
         await yieldThread();
         this.terrain = new Terrain(this.scene, this.world);
         
-        updateUI(10, "CALIBRATING ATMOSPHERIC LIGHTS...");
+        updateUI(20, "CALIBRATING ATMOSPHERIC LIGHTS...");
         this.initLights();
         this.initPhysicsMaterial();
         await yieldThread();
-        updateUI(15, "ENVIRONMENT READY.");
+        updateUI(25, "ENVIRONMENT READY.");
 
-        // --- STEP 2: Vegetation & Particles (15-30%) ---
-        updateUI(20, "DEPLOYING FIELD VEGETATION...");
+        // --- STEP 3: Vegetation & Particles (25-40%) ---
+        updateUI(30, "DEPLOYING FIELD VEGETATION...");
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         await yieldThread();
         
-        updateUI(25, "INITIALIZING BALLISTIC PARTICLES...");
+        updateUI(35, "INITIALIZING BALLISTIC PARTICLES...");
         this.particles = new ParticleSystem(this.scene);
         await yieldThread();
-        updateUI(30, "SYSTEMS SYNCHRONIZED.");
+        updateUI(40, "SYSTEMS SYNCHRONIZED.");
 
-        // --- STEP 3: Player & Audio Listener (30-45%) ---
-        updateUI(35, "ARMING INFANTRY SQUAD...");
+        // --- STEP 4: Player & Audio Listener (40-50%) ---
+        updateUI(45, "ARMING INFANTRY SQUAD...");
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
         this.player.body.position.set(-50, 5, -50); 
         this.player.audio = this.audio;
         
-        // Re-route audio listener to player head
         this.audio.listener.parent.remove(this.audio.listener);
         this.player.camera.add(this.audio.listener);
         await yieldThread();
-        updateUI(45, "PLAYER READY.");
+        updateUI(50, "PLAYER READY.");
 
-        // --- STEP 4: Real-time Sound Asset Loading (45-80%) ---
-        updateUI(46, "BUFFERING COMBAT SOUNDSCAPES...");
+        // --- STEP 5: Real-time Sound Asset Loading (50-85%) ---
+        updateUI(51, "BUFFERING COMBAT SOUNDSCAPES...");
         const soundAssets = [
             ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
             ['ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4],
@@ -163,15 +183,15 @@ class Game {
         for (let i = 0; i < soundAssets.length; i++) {
             const s = soundAssets[i];
             await this.audio.loadSound(...s);
-            const soundProgress = 46 + ((i + 1) / soundAssets.length) * 34;
+            const soundProgress = 51 + ((i + 1) / soundAssets.length) * 34;
             updateUI(soundProgress, `SYNCING ASSET: ${s[0].toUpperCase()}...`);
         }
 
-        // --- STEP 5: Base & NPCs (80-95%) ---
-        updateUI(81, "FORTIFYING OUTPOSTS...");
+        // --- STEP 6: Base & NPCs (85-98%) ---
+        updateUI(86, "FORTIFYING OUTPOSTS...");
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
         
-        updateUI(85, "ESTABLISHING OBJECTIVES...");
+        updateUI(88, "ESTABLISHING OBJECTIVES...");
         this.objectives = [
             new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio),
             new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio),
@@ -179,7 +199,7 @@ class Game {
         ];
         await yieldThread();
 
-        updateUI(90, "DEPLOYING MOTORIZED DIVISIONS...");
+        updateUI(92, "DEPLOYING MOTORIZED DIVISIONS...");
         this.tanks = [
             new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
             new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio, this.particles), 
@@ -187,25 +207,25 @@ class Game {
         ];
         this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
         
-        updateUI(95, "INFILTRATING STRIKE TEAMS...");
+        updateUI(98, "INFILTRATING STRIKE TEAMS...");
         this.enemies = [];
         this.allies = [];
         this.spawnEnemies(12);
         this.spawnAllies(5);
         await yieldThread();
 
-        // --- STEP 6: Final Polish (95-100%) ---
-        updateUI(98, "FINALIZING TACTICAL OVERLAY...");
+        // --- STEP 7: Final Polish (98-100%) ---
+        updateUI(99, "FINALIZING TACTICAL OVERLAY...");
         this.alliedTickets = 500;
         this.enemyTickets = 500;
         this.activeVehicle = null;
         this.initMinimap();
         await yieldThread();
 
-        updateUI(99, "COMMAND READY.");
-        await yieldThread();
-        
-        updateUI(100, "COMMENCING OPERATION.");
+        updateUI(100, "COMMAND READY. COMMENCING OPERATION.");
+
+        // Clear intervals
+        clearInterval(this.tipInterval);
 
         // Music Cross-Fade
         this.audio.fadeSound('anthem', 0, 3);
@@ -304,7 +324,6 @@ class Game {
         const delta = this.clock.getDelta();
 
         if (!this.isLoaded) {
-            // Render the empty scene with tempCamera during menu/loading
             this.renderer.render(this.scene, this.tempCamera);
             return;
         }
