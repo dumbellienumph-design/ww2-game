@@ -147,10 +147,23 @@ class Game {
     spawnEnemies(count) {
         for(let i=0; i<count; i++) {
             let x, z;
-            do { x = (Math.random() - 0.5) * 400; z = (Math.random() - 0.5) * 400; } 
-            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 100);
-            const enemy = new Enemy(this.scene, this.world, { x, y: 20, z }, this.audio);
-            const icon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+            do { x = (Math.random() - 0.5) * 600; z = (Math.random() - 0.5) * 600; } 
+            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 130);
+            
+            // 15% tank, 15% flak, 70% infantry
+            const rand = Math.random();
+            let type = 'infantry';
+            if (rand > 0.85) type = 'tank';
+            else if (rand > 0.70) type = 'aa_flak';
+
+            const enemy = new Enemy(this.scene, this.world, { x, y: 20, z }, this.audio, type);
+            
+            let iconColor = 0xff0000;
+            let iconSize = 3;
+            if (type === 'tank') { iconColor = 0xffaa00; iconSize = 6; }
+            else if (type === 'aa_flak') { iconColor = 0xffff00; iconSize = 5; }
+
+            const icon = new THREE.Mesh(new THREE.CircleGeometry(iconSize, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1);
             this.scene.add(icon);
             enemy.minimapIcon = icon;
