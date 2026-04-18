@@ -139,7 +139,12 @@ class Game {
 
         // --- STEP 1: INITIALIZE SOUND & ANTHEM (0-15%) ---
         updateUI(5, "INITIALIZING FIELD AUDIO...");
-        await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
+        
+        // Add a small timeout to audio loading to prevent hanging indefinitely
+        const audioLoadPromise = this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 5000));
+        
+        await Promise.race([audioLoadPromise, timeoutPromise]);
         this.audio.play('anthem');
         updateUI(15, "ANTHEM BROADCASTING...");
 
