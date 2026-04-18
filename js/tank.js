@@ -3,9 +3,10 @@ import * as CANNON from 'cannon-es';
 import { VFX } from './vfx.js';
 
 export class Tank {
-    constructor(scene, world, position) {
+    constructor(scene, world, position, audio) {
         this.scene = scene;
         this.world = world;
+        this.audio = audio;
         
         this.group = new THREE.Group();
         this.scene.add(this.group);
@@ -52,7 +53,6 @@ export class Tank {
             angularDamping: 0.1
         });
         
-        // Slightly lower CoM
         this.body.shapeOffsets[0].set(0, 0.5, 0);
         this.world.addBody(this.body);
         this.body.mesh = this.group;
@@ -65,7 +65,6 @@ export class Tank {
         
         const vOffset = -0.5;
 
-        // --- HULL ---
         const mainHull = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.3, 7.5), tigerGrey);
         mainHull.position.y = 0.65 + vOffset;
         this.group.add(mainHull);
@@ -74,7 +73,6 @@ export class Tank {
         frontArmor.position.set(0, 1.4 + vOffset, -3.2);
         this.group.add(frontArmor);
 
-        // Wheels
         const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16);
         wheelGeo.rotateZ(Math.PI / 2);
         for (let i = 0; i < 8; i++) {
@@ -88,7 +86,6 @@ export class Tank {
             this.group.add(wr);
         }
 
-        // --- TURRET ---
         this.turretGroup = new THREE.Group();
         this.turretGroup.position.set(0, 1.6 + vOffset, 0);
         this.group.add(this.turretGroup);
@@ -100,7 +97,6 @@ export class Tank {
         mantlet.position.set(0, 0, -1.8);
         this.turretGroup.add(mantlet);
 
-        // --- BARREL ---
         this.barrelGroup = new THREE.Group();
         this.barrelGroup.position.set(0, 0, -1.8);
         this.turretGroup.add(this.barrelGroup);
@@ -115,7 +111,6 @@ export class Tank {
         brake.position.z = -5.8;
         this.barrelGroup.add(brake);
 
-        // Camera Anchors
         this.chaseCameraAnchor = new THREE.Object3D();
         this.chaseCameraAnchor.position.set(0, 6, 12); 
         this.group.add(this.chaseCameraAnchor);
@@ -128,32 +123,37 @@ export class Tank {
     update(delta, controls, camera) {
         if (!this.isOccupied) {
             if(this.reticle) this.reticle.visible = false;
+            if(this.audio) this.audio.stop('tank_engine');
             return;
         }
 
-        // --- HULL MOVEMENT ---
+        // --- AUDIO: DYNAMIC ENGINE ---
+        if (this.audio) {
+            this.audio.play('tank_engine');
+            const speed = this.body.velocity.length();
+            // Maybach V12 roar: Pitch shifts from 1.0 (idle) up to 1.8 (full speed)
+            const pitchRate = 1.0 + (speed / 15) * 0.8;
+            this.audio.setPlaybackRate('tank_engine', pitchRate);
+        }
+
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
         let targetSpeed = 0;
         if (controls.forward) targetSpeed = 15;
         else if (controls.backward) targetSpeed = -10;
 
-        // Apply velocities directly
         const currentY = this.body.velocity.y;
         this.body.velocity.x = forward.x * targetSpeed;
         this.body.velocity.z = forward.z * targetSpeed;
-        this.body.velocity.y = currentY; // Let gravity and collisions handle Y
+        this.body.velocity.y = currentY; 
 
-        // Steering
         const turnSpeed = 1.5;
         if (controls.left) this.body.angularVelocity.y = turnSpeed;
         else if (controls.right) this.body.angularVelocity.y = -turnSpeed;
         else this.body.angularVelocity.y *= 0.5;
 
-        // Keep it mostly upright but allow slight tilting
         this.body.angularVelocity.x *= 0.1;
         this.body.angularVelocity.z *= 0.1;
 
-        // --- TURRET & BARREL ---
         const camEuler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
         const hullEuler = new THREE.Euler().setFromQuaternion(this.group.quaternion, 'YXZ');
 
@@ -176,7 +176,6 @@ export class Tank {
         else this.currentBarrelPitch += Math.sign(pitchDiff) * stepX;
         this.barrelGroup.rotation.x = this.currentBarrelPitch;
 
-        // Reticle
         if(this.reticle) {
             this.reticle.visible = true;
             const rayDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.barrelGroup.getWorldQuaternion(new THREE.Quaternion()));
@@ -195,6 +194,8 @@ export class Tank {
     }
 
     fire() {
+        if(this.audio) this.audio.play('tank_fire');
+
         this.barrelGroup.position.z += 0.4;
         setTimeout(() => this.barrelGroup.position.z -= 0.4, 60);
         const tip = new THREE.Vector3(0, 0, -6.5).applyMatrix4(this.barrelGroup.matrixWorld);

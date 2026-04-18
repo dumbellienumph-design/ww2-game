@@ -58,4 +58,20 @@ export class AudioManager {
             sound.setVolume(volume * this.globalVolume);
         }
     }
+
+    setPlaybackRate(name, rate) {
+        const sound = this.sounds.get(name);
+        if (sound && sound.isPlaying) {
+            sound.setPlaybackRate(rate);
+        }
+    }
+
+    createPositionalSource(name, mesh) {
+        const sound = this.sounds.get(name);
+        if (sound && sound instanceof THREE.PositionalAudio) {
+            mesh.add(sound);
+            return sound;
+        }
+        return null;
+    }
 }

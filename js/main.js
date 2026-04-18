@@ -47,11 +47,11 @@ class Game {
         this.initAudio();
 
         this.tanks = [
-            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }), 
-            new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }), 
-            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 })    
+            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio), 
+            new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio), 
+            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 }, this.audio)    
         ];
-        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 })];
+        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio)];
         this.enemies = [];
         this.allies = [];
         this.activeVehicle = null;
@@ -67,10 +67,19 @@ class Game {
     }
 
     async initAudio() {
-        // High quality orchestral anthem (Creative Commons)
-        // Using a reliable sample URL for demonstration
+        // 1. Cinematic Layer
         await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
         await this.audio.loadSound('ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4);
+
+        // 2. Mechanical Layer (Tank)
+        await this.audio.loadSound('tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6);
+        await this.audio.loadSound('tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8);
+
+        // 3. Mechanical Layer (Helicopter)
+        // High frequency rotor whir
+        await this.audio.loadSound('heli_engine', 'https://cdn.freesound.org/previews/337/337346_4221199-lq.mp3', false, true, 0.6);
+        // Rapid Machine Gun
+        await this.audio.loadSound('heli_fire', 'https://cdn.freesound.org/previews/253/253381_4474943-lq.mp3', false, false, 0.5);
     }
 
     initMinimap() {
@@ -165,7 +174,7 @@ class Game {
         deployBtn.addEventListener('mouseenter', () => this.audio.play('ui_click'));
         deployBtn.addEventListener('click', () => {
             this.audio.play('ui_click');
-            this.audio.startAudioContext(); // Resumes and plays Anthem
+            this.audio.startAudioContext(); 
             
             deployBtn.innerText = "LOADING...";
             deployBtn.disabled = true;
