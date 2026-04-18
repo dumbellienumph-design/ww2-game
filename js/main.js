@@ -34,30 +34,27 @@ class Game {
         this.timeOfDay = 0;
         this.daySpeed = 0.05;
 
-        this.isLoaded = false;
         this.isGameOver = false;
         this.isPlayerActive = false; 
-
         this.activeRadius = 200; 
-        
-        // --- 1. INSTANT INIT (NO AWAIT) ---
+
+        // --- 1. INSTANT ENTRY ---
         this.initWorld();
-        this.initUI();
+        this.isLoaded = true; // Show world immediately
+        
+        this.initPointerLockListener();
         
         window.addEventListener('resize', () => this.onWindowResize());
         this.clock = new THREE.Clock();
         this.animate();
     }
 
-    initUI() {
-        const startOverlay = document.getElementById('start-overlay');
-        const btnStart = document.getElementById('btn-start');
-
-        btnStart.addEventListener('click', () => {
-            startOverlay.classList.add('hidden');
-            document.getElementById('ui-layer').classList.remove('hidden');
-            try { this.player.requestPointerLock(); } catch (e) {}
-            this.isLoaded = true;
+    initPointerLockListener() {
+        // Any click on the document will lock the mouse for control
+        document.addEventListener('mousedown', () => {
+            if (this.isLoaded && !this.isGameOver && !document.pointerLockElement) {
+                try { this.player.requestPointerLock(); } catch (e) {}
+            }
         });
 
         const btnResume = document.getElementById('btn-resume');
@@ -70,7 +67,6 @@ class Game {
     }
 
     initWorld() {
-        // Build everything immediately
         this.terrain = new Terrain(this.scene, this.world);
         this.initLights();
         this.initPhysicsMaterial();
@@ -158,6 +154,43 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
+    updateEnvironment(delta) {
+        this.timeOfDay += delta * 0.05;
+        const sunX = Math.cos(this.timeOfDay) * 200;
+        const sunY = Math.sin(this.timeOfDay) * 200;
+        this.sunLight.position.set(sunX, sunY, 50);
+        const dayFactor = Math.max(0, Math.min(1, sunY / 50));
+        this.sunLight.intensity = dayFactor * 0.8;
+        this.ambientLight.intensity = 0.1 + (dayFactor * 0.3);
+        const dayColor = new THREE.Color(0x8899a6);
+        const nightColor = new THREE.Color(0x050510);
+        const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
+        this.scene.background = currentColor;
+        if (this.scene.fog) this.scene.fog.color = currentColor;
+    }
+
+    updateCulling() {
+        if (!this.player || !this.isLoaded) return;
+        const playerPos = this.player.body.position;
+
+        if (this.vegetation && this.vegetation.objects) {
+            this.vegetation.objects.forEach(obj => {
+                const distSq = playerPos.distanceSquared(obj.body.position);
+                const shouldBeActive = distSq < this.activeRadius * this.activeRadius;
+
+                if (shouldBeActive && !obj.active) {
+                    this.scene.add(obj.mesh);
+                    this.world.addBody(obj.body);
+                    obj.active = true;
+                } else if (!shouldBeActive && obj.active) {
+                    this.scene.remove(obj.mesh);
+                    this.world.removeBody(obj.body);
+                    obj.active = false;
+                }
+            });
+        }
+    }
+
     animate() {
         if (this.isGameOver) return;
         requestAnimationFrame(() => this.animate());
@@ -168,6 +201,12 @@ class Game {
         if (!this.isPlayerActive) {
             const vel = this.player.body.velocity;
             if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true;
+        }
+
+        this.cullingTimer += delta;
+        if (this.cullingTimer > 0.5) { 
+            this.updateCulling();
+            this.cullingTimer = 0;
         }
 
         this.world.step(1/60, delta, 10);
