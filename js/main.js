@@ -78,9 +78,7 @@ class Game {
         // 3. Mechanical Layer (Tank Foley)
         await this.audio.loadSound('tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6);
         await this.audio.loadSound('tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.9);
-        // Track Squeal: Haunting metallic howl
         await this.audio.loadSound('tank_tracks', 'https://cdn.freesound.org/previews/261/261763_4933934-lq.mp3', false, true, 0.3);
-        // Breech Reload: Mechanical sequence
         await this.audio.loadSound('tank_reload', 'https://cdn.freesound.org/previews/263/263004_4933934-lq.mp3', false, false, 0.7);
 
         // 4. Mechanical Layer (Helicopter)
@@ -93,6 +91,8 @@ class Game {
 
         // 6. Ambient Layer
         await this.audio.loadSound('base_hum', 'https://cdn.freesound.org/previews/212/212134_4083377-lq.mp3', true, true, 0.3);
+        // Alpine Wind Loop
+        await this.audio.loadSound('ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3);
     }
 
     initMinimap() {
@@ -101,11 +101,8 @@ class Game {
         this.minimapCamera.position.set(0, 200, 0);
         this.minimapCamera.lookAt(0, 0, 0);
         this.minimapCamera.up.set(0, 0, -1);
-        const arrowShape = new THREE.Shape();
-        arrowShape.moveTo(0, 6); arrowShape.lineTo(-3, -4); arrowShape.lineTo(0, -2); arrowShape.lineTo(3, -4); arrowShape.lineTo(0, 6);
-        const arrowGeo = new THREE.ShapeGeometry(arrowShape);
         const arrowMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-        this.playerIcon = new THREE.Mesh(arrowGeo, arrowMat);
+        this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), arrowMat);
         this.playerIcon.rotation.x = -Math.PI / 2;
         this.playerIcon.layers.set(1);
         this.scene.add(this.playerIcon);
@@ -113,12 +110,9 @@ class Game {
     }
 
     createTextTexture(text) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 64; canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = 'white'; ctx.font = 'Bold 48px Courier New';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(text, 32, 32);
+        const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+        const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.font = 'Bold 48px Courier New';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 32, 32);
         return new THREE.CanvasTexture(canvas);
     }
 
@@ -127,8 +121,7 @@ class Game {
         ['N', 'S', 'E', 'W'].forEach(label => {
             const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.createTextTexture(label) }));
             sprite.scale.set(15, 15, 1); sprite.layers.set(1);
-            this.scene.add(sprite);
-            this.compassLabels[label] = sprite;
+            this.scene.add(sprite); this.compassLabels[label] = sprite;
         });
     }
 
@@ -248,6 +241,11 @@ class Game {
         const delta = this.clock.getDelta();
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
+
+        // --- AUDIO: ALTITUDE REALISM ---
+        const currentY = this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y;
+        this.audio.updateAltitudeEffects(currentY);
+
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
         if (this.player.body.position.y < -15) { this.player.body.position.set(0, 10, 0); this.player.body.velocity.set(0, 0, 0); }
         if (this.activeVehicle) {

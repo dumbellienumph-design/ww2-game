@@ -10,6 +10,13 @@ export class AudioManager {
         
         this.isAudioContextStarted = false;
         this.globalVolume = 0.5;
+
+        // --- REALISM FILTERS ---
+        this.altitudeFilter = this.listener.context.createBiquadFilter();
+        this.altitudeFilter.type = 'lowpass';
+        this.altitudeFilter.frequency.value = 20000; // Start open
+        this.listener.gain.connect(this.altitudeFilter);
+        this.altitudeFilter.connect(this.listener.context.destination);
     }
 
     async loadSound(name, url, isPositional = false, loop = false, volume = 1.0) {
@@ -20,7 +27,6 @@ export class AudioManager {
                 audio.setLoop(loop);
                 audio.setVolume(volume * this.globalVolume);
                 
-                // Add realistic distance model for 3D sounds
                 if (isPositional) {
                     audio.setRefDistance(5);
                     audio.setMaxDistance(100);
@@ -39,23 +45,40 @@ export class AudioManager {
         if (context.state === 'suspended') { context.resume(); }
         this.isAudioContextStarted = true;
         this.play('anthem');
+        this.play('ambient_wind');
+    }
+
+    updateAltitudeEffects(y) {
+        // --- ALTITUDE REALISM LOGIC ---
+        // As we go higher (up to 100m), air gets thinner
+        // 1. High Frequency Absorption (LPF)
+        const minFreq = 4000; // Muffled at peak
+        const maxFreq = 20000; // Clear at base
+        const altitudeFactor = Math.min(Math.max(y / 100, 0), 1);
+        
+        const targetFreq = maxFreq - (altitudeFactor * (maxFreq - minFreq));
+        this.altitudeFilter.frequency.setTargetAtTime(targetFreq, this.listener.context.currentTime, 0.5);
+
+        // 2. Volume Attenuation (-3dB at peak)
+        const targetGain = 1.0 - (altitudeFactor * 0.3);
+        this.listener.setMasterVolume(targetGain * this.globalVolume);
+
+        // 3. Wind Intensity
+        const wind = this.sounds.get('ambient_wind');
+        if (wind) {
+            wind.setVolume(0.2 + (altitudeFactor * 0.8));
+            wind.setPlaybackRate(1.0 + (altitudeFactor * 0.2)); // Wind screams higher at peak
+        }
     }
 
     play(name, options = {}) {
         const sound = this.sounds.get(name);
         if (!sound) return;
-
-        // Reset and play for non-looping sounds
-        if (sound.isPlaying && !sound.loop) {
-            sound.stop();
-        }
-        
-        // Dynamic pitch variation for realism (random +/- 5%)
+        if (sound.isPlaying && !sound.loop) { sound.stop(); }
         if (options.randomPitch) {
             const p = 1.0 + (Math.random() - 0.5) * 0.1;
             sound.setPlaybackRate(p);
         }
-
         sound.play();
     }
 
