@@ -21,6 +21,12 @@ export class Player {
         this.health = 100;
         this.enabled = true;
         
+        // --- NEW: MEDIC SYSTEM STATE ---
+        this.isBleeding = false;
+        this.bandages = 3;
+        this.isHealing = false;
+        this.healTimer = 0;
+
         this.moveState = {
             forward: false, backward: false, left: false, right: false,
             jump: false, shoot: false, ads: false,
@@ -31,7 +37,7 @@ export class Player {
             { 
                 name: 'Kar98k', type: 'bolt', damage: 150, fireRate: 1.5, 
                 capacity: 5, ammo: 5, reserve: 25, reloadTime: 4.0,
-                color: 0x4d2a15, length: 0.9, auto: false, adsFOV: 50, adsSpeed: 0.4
+                color: 0x4d2a15, length: 0.9, auto: false, adsFOV: 30, adsSpeed: 0.3
             },
             { 
                 name: 'M1 Garand', type: 'semi', damage: 60, fireRate: 0.35, 
@@ -47,6 +53,7 @@ export class Player {
         this.currentWeaponIndex = 0;
         this.grenades = 3;
         this.grenadeList = [];
+        this.projectiles = []; // For physical ballistics
 
         this.fireTimer = 0;
         this.reloadTimer = 0;
@@ -108,10 +115,14 @@ export class Player {
             if(e.code === 'Digit3') this.switchWeapon(2);
             if(e.code === 'KeyR') this.reload();
             if(e.code === 'KeyG') this.throwGrenade();
+            if(e.code === 'KeyH') this.startHealing();
             if(e.code === 'KeyZ') this.moveState.prone = !this.moveState.prone;
             if(e.code === 'KeyC') this.moveState.crouch = !this.moveState.crouch;
         });
-        document.addEventListener('keyup', (e) => this.onKey(e.code, false));
+        document.addEventListener('keyup', (e) => {
+            this.onKey(e.code, false);
+            if(e.code === 'KeyH') this.stopHealing();
+        });
         
         document.addEventListener('mousedown', (e) => {
             if (document.pointerLockElement === this.domElement) {
@@ -125,6 +136,17 @@ export class Player {
                 if(e.button === 2) this.moveState.ads = false;
             }
         });
+    }
+
+    startHealing() {
+        if (this.bandages > 0 && this.health < 100) {
+            this.isHealing = true;
+            this.healTimer = 0;
+        }
+    }
+
+    stopHealing() {
+        this.isHealing = false;
     }
 
     onKey(code, isPressed) {
@@ -206,10 +228,11 @@ export class Player {
     takeDamage(amount) {
         this.health -= amount;
         this.suppress(0.3); 
+        this.isBleeding = true; // Trigger bleeding
         if (this.health <= 0) {
-            this.health = 0;
-            this.body.position.set(-50, 5, -5);
             this.health = 100;
+            this.body.position.set(-50, 5, 40);
+            this.isBleeding = false;
         }
     }
 
@@ -228,7 +251,7 @@ export class Player {
     shoot() {
         if (this.isReloading) return;
         const weapon = this.weapons[this.currentWeaponIndex];
-        if (weapon.ammo <= 0) { return; }
+        if (weapon.ammo <= 0) return;
         weapon.ammo--;
         
         const recoilAmount = (this.moveState.ads ? 0.02 : 0.05) * (1 + this.suppression);
@@ -236,35 +259,32 @@ export class Player {
         this.gunGroup.rotation.x += recoilAmount * 0.5;
         
         if(this.particles) {
-            const muzzleWorldPos = new THREE.Vector3();
-            this.muzzle.getWorldPosition(muzzleWorldPos);
+            const muzzlePos = new THREE.Vector3();
+            this.muzzle.getWorldPosition(muzzlePos);
             const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-            this.particles.createMuzzleFlash(muzzleWorldPos, dir, false);
-        }
-
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-        const intersects = raycaster.intersectObjects(this.scene.children, true);
-        
-        if (intersects.length > 0) {
-            const hit = intersects[0];
-            const hitBody = this.findPhysicsBody(hit.object);
+            this.particles.createMuzzleFlash(muzzlePos, dir, false);
             
-            // --- NEW: VISUAL IMPACT FEEDBACK ---
-            if (hit.object.name !== 'minimap') {
-                const isDirt = hit.object.name === 'terrain' || hit.object.geometry?.type === 'PlaneGeometry';
-                VFX.createImpactVFX(this.scene, hit.point, hit.face.normal, isDirt ? 'dirt' : 'concrete');
-                if (!hitBody || !hitBody.onHit) {
-                    VFX.createBulletHole(this.scene, hit);
-                }
-            }
-
-            if (hitBody && hitBody.onHit) {
-                hitBody.onHit(weapon.damage);
-                const isKill = (hitBody.health !== undefined && hitBody.health <= 0) || hitBody.isDead;
-                this.showHitmarker(isKill);
-            }
+            // --- NEW: PHYSICAL PROJECTILE (TRACER) ---
+            this.createProjectile(muzzlePos, dir, weapon);
         }
+    }
+
+    createProjectile(pos, dir, weapon) {
+        const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 1.5);
+        const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+        const tracer = new THREE.Mesh(tracerGeo, tracerMat);
+        tracer.position.copy(pos);
+        tracer.lookAt(pos.clone().add(dir));
+        this.scene.add(tracer);
+
+        const projectile = {
+            mesh: tracer,
+            velocity: dir.clone().multiplyScalar(180), // Bullet speed
+            gravity: new THREE.Vector3(0, -9.8, 0),
+            damage: weapon.damage,
+            life: 2.0
+        };
+        this.projectiles.push(projectile);
     }
 
     findPhysicsBody(mesh) {
@@ -285,6 +305,63 @@ export class Player {
         if (this.gunGroup) this.gunGroup.visible = true;
 
         const weapon = this.weapons[this.currentWeaponIndex];
+
+        // --- UPDATE BALLISTICS ---
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            const p = this.projectiles[i];
+            p.life -= delta;
+            
+            // Apply gravity and travel
+            p.velocity.add(p.gravity.clone().multiplyScalar(delta));
+            const nextPos = p.mesh.position.clone().add(p.velocity.clone().multiplyScalar(delta));
+            
+            // Raycast for precision collision between frames
+            const ray = new THREE.Raycaster(p.mesh.position, p.velocity.clone().normalize(), 0, p.velocity.length() * delta + 0.1);
+            const intersects = ray.intersectObjects(this.scene.children, true);
+            
+            if (intersects.length > 0 && intersects[0].object !== p.mesh) {
+                const hit = intersects[0];
+                const hitBody = this.findPhysicsBody(hit.object);
+                
+                // Impact effects
+                if (hit.object.name !== 'minimap') {
+                    const isDirt = hit.object.name === 'terrain' || hit.object.geometry?.type === 'PlaneGeometry';
+                    VFX.createImpactVFX(this.scene, hit.point, hit.face.normal, isDirt ? 'dirt' : 'concrete');
+                    if (!hitBody || !hitBody.onHit) VFX.createBulletHole(this.scene, hit);
+                }
+
+                if (hitBody && hitBody.onHit) {
+                    hitBody.onHit(p.damage);
+                    this.showHitmarker((hitBody.health !== undefined && hitBody.health <= 0) || hitBody.isDead);
+                }
+                
+                this.scene.remove(p.mesh);
+                this.projectiles.splice(i, 1);
+                continue;
+            }
+
+            p.mesh.position.copy(nextPos);
+            p.mesh.lookAt(nextPos.clone().add(p.velocity));
+
+            if (p.life <= 0) {
+                this.scene.remove(p.mesh);
+                this.projectiles.splice(i, 1);
+            }
+        }
+
+        // --- UPDATE MEDIC SYSTEM ---
+        if (this.isHealing) {
+            this.healTimer += delta;
+            if (this.healTimer >= 2.0) { // 2 seconds to bandage
+                this.health = Math.min(100, this.health + 40);
+                this.bandages--;
+                this.isBleeding = false;
+                this.isHealing = false;
+            }
+        }
+        if (this.isBleeding && !this.isHealing) {
+            this.health -= delta * 1.5; // Drain health while bleeding
+        }
 
         if (this.isReloading) {
             this.reloadTimer -= delta;
@@ -354,6 +431,7 @@ export class Player {
             moveDir.normalize();
             const currentY = this.body.velocity.y;
             currentSpeed = this.walkSpeed * speedMult * THREE.MathUtils.lerp(1.0, weapon.adsSpeed, this.adsFactor);
+            if (this.isHealing) currentSpeed *= 0.3; // Slow while bandaging
             this.body.velocity.x = moveDir.x * currentSpeed;
             this.body.velocity.z = moveDir.z * currentSpeed;
             this.body.velocity.y = currentY;
@@ -385,6 +463,8 @@ export class Player {
 
         if (this.isReloading) {
             this.gunGroup.position.lerp(new THREE.Vector3(0.3, -1.0, -0.5), 0.1);
+        } else if (this.isHealing) {
+            this.gunGroup.position.lerp(new THREE.Vector3(0, -1.5, -0.5), 0.1); // Lower gun while healing
         } else {
             this.gunGroup.position.lerpVectors(hipPos, adsPos, this.adsFactor);
         }

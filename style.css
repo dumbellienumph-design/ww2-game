@@ -264,7 +264,132 @@ button:hover {
     padding: 15px 30px;
     border-left: 4px solid #ff0;
     font-size: 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
+
+#health-container {
+    width: 200px;
+    height: 10px;
+    background: rgba(255, 255, 0, 0.1);
+    border: 1px solid #ff0;
+}
+
+#health-bar {
+    width: 100%;
+    height: 100%;
+    background: #ff0;
+    transition: width 0.3s;
+}
+
+#health-bar.bleeding {
+    background: #f00;
+    animation: pulseRed 1s infinite;
+}
+
+#medic-status {
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+}
+
+/* --- TACTICAL COMPASS --- */
+#compass-container {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 400px;
+    height: 40px;
+    background: linear-gradient(90deg, transparent, rgba(0,20,0,0.8), transparent);
+    border-bottom: 2px solid #ff0;
+    overflow: hidden;
+    z-index: 60;
+}
+
+#compass-tape {
+    position: absolute;
+    top: 10px;
+    left: 0;
+    width: 2000px;
+    display: flex;
+    gap: 50px;
+    font-weight: bold;
+    letter-spacing: 5px;
+    transition: transform 0.1s linear;
+}
+
+#compass-marker {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 10px;
+    background: #ff0;
+}
+
+/* --- CLASS UI --- */
+#class-indicator {
+    position: fixed;
+    bottom: 3rem;
+    right: 3rem;
+    text-align: right;
+    background: rgba(0,0,0,0.7);
+    padding: 15px 30px;
+    border-right: 4px solid #ff0;
+    font-size: 1.1rem;
+}
+
+#class-indicator span {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #ff0;
+}
+
+/* --- FULL TACTICAL MAP (M) --- */
+#full-map-overlay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80vh;
+    height: 80vh;
+    background: rgba(0, 20, 0, 0.9);
+    border: 3px solid #ff0;
+    display: none;
+    z-index: 80;
+    box-shadow: 0 0 100px rgba(0,0,0,1);
+}
+
+#full-map-overlay.active {
+    display: block;
+}
+
+#full-map-canvas {
+    width: 100%;
+    height: 100%;
+    filter: brightness(1.2) contrast(1.2) sepia(1) hue-rotate(15deg) saturate(3);
+}
+
+#full-map-title {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    color: #ff0;
+    font-weight: bold;
+    letter-spacing: 5px;
+}
+
+
+
+@keyframes pulseRed {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
 
 #minimap-container {
     position: absolute;

@@ -34,11 +34,18 @@ class GameUI {
         container.appendChild(msg);
         setTimeout(() => msg.remove(), 2000);
     }
+
+    static updateCompass(yaw) {
+        const tape = document.getElementById('compass-tape');
+        if (!tape) return;
+        const deg = (yaw * (180 / Math.PI)) % 360;
+        tape.style.transform = `translateX(${-deg * 2}px)`;
+    }
 }
 
 class Game {
     constructor() {
-        window.game = this; // Global access for UI buttons
+        window.game = this;
         this.canvas = document.querySelector('#game-canvas');
         this.renderer = new THREE.WebGLRenderer({ 
             canvas: this.canvas, 
@@ -53,6 +60,11 @@ class Game {
         this.minimapCanvas = document.querySelector('#minimap-canvas');
         this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas });
         this.minimapRenderer.setSize(220, 220);
+
+        // --- FULL TACTICAL MAP RENDERER ---
+        this.fullMapCanvas = document.querySelector('#full-map-canvas');
+        this.fullMapRenderer = new THREE.WebGLRenderer({ canvas: this.fullMapCanvas });
+        this.fullMapRenderer.setSize(800, 800); // Fixed resolution for high detail
 
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x33383d);
@@ -74,6 +86,8 @@ class Game {
 
         this.initWorld();
         this.initUI();
+        this.initCompass();
+        this.initFullMap();
         
         window.addEventListener('resize', () => this.onWindowResize());
         this.clock = new THREE.Clock();
@@ -82,15 +96,21 @@ class Game {
         GameUI.notify("MISSION STARTED: SECURE THE SECTOR", "#ff0");
     }
 
+    initFullMap() {
+        this.fullMapSize = 400; // Whole battlefield view
+        this.fullMapCamera = new THREE.OrthographicCamera(-this.fullMapSize, this.fullMapSize, this.fullMapSize, -this.fullMapSize, 1, 1000);
+        this.fullMapCamera.position.set(0, 500, 0);
+        this.fullMapCamera.lookAt(0, 0, 0);
+        this.fullMapCamera.up.set(0, 0, -1);
+    }
+
     initUI() {
-        // Pointer Lock on click
         document.addEventListener('mousedown', () => {
-            if (!this.isGameOver && !document.pointerLockElement) {
+            if (!this.isGameOver && !document.pointerLockElement && !document.getElementById('full-map-overlay').classList.contains('active')) {
                 try { this.player.requestPointerLock(); } catch (e) {}
             }
         });
 
-        // ESC Menu
         const btnResume = document.getElementById('btn-resume');
         if (btnResume) {
             btnResume.addEventListener('click', () => {
@@ -99,9 +119,20 @@ class Game {
             });
         }
 
-        // --- COMMAND SYSTEM INPUTS ---
         const commandMenu = document.getElementById('command-menu');
+        const fullMap = document.getElementById('full-map-overlay');
+
         document.addEventListener('keydown', (e) => {
+            // --- FULL MAP TOGGLE (M) ---
+            if (e.code === 'KeyM' && !this.isGameOver) {
+                fullMap.classList.toggle('active');
+                if (fullMap.classList.contains('active')) {
+                    document.exitPointerLock();
+                } else {
+                    this.player.requestPointerLock();
+                }
+            }
+
             if (e.code === 'KeyV') {
                 commandMenu.classList.add('active');
                 document.exitPointerLock();
@@ -111,13 +142,32 @@ class Game {
                 if (e.code === 'Digit2') this.setSquadOrder('HOLD');
                 if (e.code === 'Digit3') this.setSquadOrder('REGROUP');
             }
+            
+            if (e.code === 'Digit7') this.switchClass('ASSAULT');
+            if (e.code === 'Digit8') this.switchClass('SNIPER');
+            if (e.code === 'Digit9') this.switchClass('RIFLEMAN');
         });
+
         document.addEventListener('keyup', (e) => {
             if (e.code === 'KeyV') {
                 commandMenu.classList.remove('active');
-                if (this.isLoaded) this.player.requestPointerLock();
+                if (!fullMap.classList.contains('active')) this.player.requestPointerLock();
             }
         });
+    }
+
+    switchClass(className) {
+        if (!this.player) return;
+        const indicator = document.querySelector('#class-indicator span');
+        if (className === 'ASSAULT') {
+            this.player.switchWeapon(2); // MP40
+        } else if (className === 'SNIPER') {
+            this.player.switchWeapon(0); // Kar98k
+        } else {
+            this.player.switchWeapon(1); // M1 Garand
+        }
+        indicator.innerText = className;
+        GameUI.notify(`CLASS: ${className}`, "#ff0");
     }
 
     setSquadOrder(order) {
@@ -256,9 +306,12 @@ class Game {
         requestAnimationFrame(() => this.animate());
         const delta = this.clock.getDelta();
 
-        if (this.player && !this.isPlayerActive) {
-            const vel = this.player.body.velocity;
-            if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true;
+        if (this.player) {
+            if (!this.isPlayerActive) {
+                const vel = this.player.body.velocity;
+                if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true;
+            }
+            GameUI.updateCompass(this.player.yaw);
         }
 
         this.updateCulling();
@@ -316,22 +369,50 @@ class Game {
         }
 
         this.updateUIGameplay(playerPos);
+        
+        // --- RENDERING ---
         this.renderer.render(this.scene, this.player.camera);
+        
+        // Minimap
         this.minimapCamera.position.set(playerPos.x, 200, playerPos.z);
         this.playerIcon.position.set(playerPos.x, 101, playerPos.z);
         this.minimapRenderer.render(this.scene, this.minimapCamera);
+
+        // --- FULL TACTICAL MAP RENDERING ---
+        if (document.getElementById('full-map-overlay').classList.contains('active')) {
+            this.fullMapRenderer.render(this.scene, this.fullMapCamera);
+        }
     }
 
     updateUIGameplay(playerPos) {
-        document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
-        let ammoText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
+        const hpBar = document.getElementById('health-bar');
+        const medicStatus = document.getElementById('medic-status');
+        const ammoText = document.getElementById('ammo');
+
+        const hpPercent = Math.max(0, this.player.health);
+        hpBar.style.width = `${hpPercent}%`;
+        if (this.player.isBleeding) hpBar.classList.add('bleeding');
+        else hpBar.classList.remove('bleeding');
+
+        if (this.player.isHealing) {
+            medicStatus.innerText = "BANDAGING... STANDBY";
+            medicStatus.style.color = "#ff0";
+        } else if (this.player.isBleeding) {
+            medicStatus.innerText = "BLEEDING! PRESS H TO BANDAGE";
+            medicStatus.style.color = "#f00";
+        } else {
+            medicStatus.innerText = `BANDAGES: ${this.player.bandages} | READY`;
+            medicStatus.style.color = "#ff0";
+        }
+
+        let statusText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
         if (this.activeVehicle) {
-            ammoText += ` | VEHICLE: HP ${Math.ceil(this.activeVehicle.health)}`;
+            statusText += ` | VEHICLE: HP ${Math.ceil(this.activeVehicle.health)}`;
         } else {
             const w = this.player.weapons[this.player.currentWeaponIndex];
-            ammoText += ` | AMMO: ${w.ammo}/${w.reserve}`;
+            statusText += ` | AMMO: ${w.ammo}/${w.reserve}`;
         }
-        document.getElementById('ammo').innerText = ammoText;
+        ammoText.innerText = statusText;
     }
 
     endGame() {

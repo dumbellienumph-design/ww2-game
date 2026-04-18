@@ -17,10 +17,19 @@
 </head>
 <body>
     <div id="suppression-overlay"></div>
+    <div id="full-map-overlay">
+        <div id="full-map-title">TACTICAL MAP - SECTOR 7</div>
+        <canvas id="full-map-canvas"></canvas>
+    </div>
+    <div id="compass-container">
+        <div id="compass-tape"></div>
+        <div id="compass-marker"></div>
+    </div>
     <!-- 1. NO START OVERLAY - World shows immediately -->
 
     <!-- 2. GAME UI -->
     <div id="ui-layer">
+        <div id="class-indicator">ROLE <span>RIFLEMAN</span></div>
         <div id="command-menu">
             <h3 style="margin-top:0">SQUAD COMMANDS</h3>
             <button class="command-btn" onclick="window.game.setSquadOrder('ADVANCE')">1: ADVANCE TO POINT</button>
@@ -39,7 +48,10 @@
             </div>
             <div id="hitmarker" class="hitmarker"></div>
             <div id="stats">
-                <div id="health">HP: 100</div>
+                <div id="health-container">
+                    <div id="health-bar"></div>
+                </div>
+                <div id="medic-status">BANDAGES: 3 | READY</div>
                 <div id="ammo">AMMO: 30/150</div>
             </div>
             <div id="minimap-container">

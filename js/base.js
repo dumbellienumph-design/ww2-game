@@ -18,7 +18,7 @@ export class Base {
         this.createMuddyGround();
         this.createAirstrip();      
         this.createCantonment();    
-        this.createFortifications(); 
+        this.createDestructibleFortifications(); // Upgraded to 2.0
         this.createSupplyDepot();   
         this.createSpawnPad();
         this.createDetailedBuildings();
@@ -109,32 +109,49 @@ export class Base {
         this.world.addBody(body);
     }
 
-    createFortifications() {
+    createDestructibleFortifications() {
         const wallSize = 130;
         const height = 5;
+        const segmentLen = 10;
+        
+        // Horizontal Walls (North/South)
+        for(let x = -wallSize/2 + segmentLen/2; x <= wallSize/2; x += segmentLen) {
+            this.createDestructibleWallSegment(x, height/2, -65, segmentLen, height, 1.5);
+            // Skip gate opening in South wall
+            if (Math.abs(x) > 15) {
+                this.createDestructibleWallSegment(x, height/2, 65, segmentLen, height, 1.5);
+            }
+        }
 
-        const walls = [
-            { x: 0, z: -65, w: wallSize, d: 1.5 },
-            { x: -65, z: 0, w: 1.5, d: wallSize },
-            { x: 65, z: 0, w: 1.5, d: wallSize },
-            { x: 40, z: 65, w: 50, d: 1.5 },
-            { x: -40, z: 65, w: 50, d: 1.5 }
-        ];
+        // Vertical Walls (East/West)
+        for(let z = -wallSize/2 + segmentLen/2; z <= wallSize/2; z += segmentLen) {
+            this.createDestructibleWallSegment(-65, height/2, z, 1.5, height, segmentLen);
+            this.createDestructibleWallSegment(65, height/2, z, 1.5, height, segmentLen);
+        }
+    }
 
-        walls.forEach(w => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w.w, height, w.d), this.concreteMat);
-            mesh.position.set(w.x, height/2, w.z);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            this.group.add(mesh);
-            const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(w.w/2, height/2, w.d/2)) });
-            body.position.set(this.position.x + w.x, this.position.y + height/2, this.position.z + w.z);
-            body.mesh = mesh;
-            body.onHit = () => {
-                if(this.particles) this.particles.createPhysicalDebris(this.world, body.position, 0x444444, 1);
-            };
-            this.world.addBody(body);
-        });
+    createDestructibleWallSegment(x, y, z, w, h, d) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), this.concreteMat);
+        mesh.position.set(x, y, z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.group.add(mesh);
+
+        const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2)) });
+        body.position.set(this.position.x + x, this.position.y + y, this.position.z + z);
+        body.mesh = mesh;
+        body.health = 200; // Requires multiple grenades or a tank shell
+        body.onHit = (damage) => {
+            body.health -= damage;
+            if(body.health <= 0) {
+                this.group.remove(mesh);
+                this.world.removeBody(body);
+                if(this.particles) this.particles.createPhysicalDebris(this.world, body.position, 0x4a4a4a, 12);
+            } else {
+                if(this.particles) this.particles.createPhysicalDebris(this.world, body.position, 0x4a4a4a, 1);
+            }
+        };
+        this.world.addBody(body);
     }
 
     createSupplyDepot() {
