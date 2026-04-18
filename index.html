@@ -16,7 +16,12 @@
     </script>
 </head>
 <body>
-    <div id="ui-layer">
+    <div id="init-overlay" class="overlay">
+        <h1>WW2 FRONTLINES</h1>
+        <button id="btn-init">INITIALIZE FIELD COMMAND</button>
+    </div>
+
+    <div id="ui-layer" class="hidden">
         <div id="main-menu" class="overlay">
             <h1>WW2 FRONTLINES</h1>
             <div class="mission-brief">
@@ -30,6 +35,15 @@
             </div>
             <p class="hint">Press ESC to return to menu during gameplay</p>
         </div>
+
+        <div id="loading-screen" class="overlay hidden">
+            <h1>PREPARING FOR BATTLE...</h1>
+            <div class="loading-container">
+                <div id="loading-bar"></div>
+            </div>
+            <p id="loading-status">Synchronizing Field Intel...</p>
+        </div>
+
         <div id="game-ui" class="hidden">
             <div id="crosshair">+</div>
             <div id="stats">

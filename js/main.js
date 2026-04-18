@@ -34,42 +34,15 @@ class Game {
 
         this.initLights();
         this.initPhysicsMaterial();
-        this.terrain = new Terrain(this.scene, this.world);
-        this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
-        this.particles = new ParticleSystem(this.scene);
 
-        this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
-        this.player.body.position.set(-50, 5, -50); 
-
-        this.audio = new AudioManager(this.player.camera);
-        this.player.audio = this.audio;
-        this.initAudio();
-
-        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
-
-        this.tanks = [
-            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
-            new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio, this.particles), 
-            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 }, this.audio, this.particles)    
-        ];
-        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
-        this.enemies = [];
-        this.allies = [];
-        this.activeVehicle = null;
-
-        this.alliedTickets = 500;
-        this.enemyTickets = 500;
-        this.isGameOver = false;
-
-        this.objectives = [
-            new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio),
-            new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio),
-            new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, this.audio)
-        ];
-
-        this.initMinimap();
-        this.spawnEnemies(12);
-        this.spawnAllies(5);
+        // Initial camera for the menu/loading
+        this.tempCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.tempCamera.position.set(0, 50, 100);
+        this.tempCamera.lookAt(0, 0, 0);
+        
+        this.audio = new AudioManager(this.tempCamera);
+        this.isLoaded = false;
+        
         this.initUI();
         
         window.addEventListener('resize', () => this.onWindowResize());
@@ -77,23 +50,116 @@ class Game {
         this.animate();
     }
 
-    async initAudio() {
-        await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
-        await this.audio.loadSound('ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4);
-        await this.audio.loadSound('rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8);
-        await this.audio.loadSound('rifle_cycle', 'https://cdn.freesound.org/previews/218/218151_2210086-lq.mp3', false, false, 0.6);
-        await this.audio.loadSound('bullet_whiz', 'https://cdn.freesound.org/previews/192/192138_1066060-lq.mp3', false, false, 0.5);
-        await this.audio.loadSound('tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6);
-        await this.audio.loadSound('tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.9);
-        await this.audio.loadSound('tank_tracks', 'https://cdn.freesound.org/previews/261/261763_4933934-lq.mp3', false, true, 0.3);
-        await this.audio.loadSound('tank_reload', 'https://cdn.freesound.org/previews/263/263004_4933934-lq.mp3', false, false, 0.7);
-        await this.audio.loadSound('heli_engine', 'https://cdn.freesound.org/previews/337/337346_4221199-lq.mp3', false, true, 0.6);
-        await this.audio.loadSound('heli_fire', 'https://cdn.freesound.org/previews/253/253381_4474943-lq.mp3', false, false, 0.5);
-        await this.audio.loadSound('explosion_blast', 'https://cdn.freesound.org/previews/103/103213_746654-lq.mp3', false, false, 0.9);
-        await this.audio.loadSound('explosion_debris', 'https://cdn.freesound.org/previews/563/563148_1066060-lq.mp3', false, false, 0.6);
-        await this.audio.loadSound('base_hum', 'https://cdn.freesound.org/previews/212/212134_4083377-lq.mp3', true, true, 0.3);
-        await this.audio.loadSound('ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3);
-        await this.audio.loadSound('reinforcement', 'https://cdn.freesound.org/previews/369/369932_6081467-lq.mp3', false, false, 0.7);
+    async loadGame() {
+        const loadingBar = document.getElementById('loading-bar');
+        const loadingStatus = document.getElementById('loading-status');
+        const updateProgress = (percent, status) => {
+            loadingBar.style.width = `${percent}%`;
+            if (status) loadingStatus.innerText = status;
+        };
+
+        updateProgress(5, "Surveying Terrain...");
+        this.terrain = new Terrain(this.scene, this.world);
+        
+        updateProgress(15, "Deploying Vegetation...");
+        this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
+        
+        updateProgress(25, "Calibrating Particles...");
+        this.particles = new ParticleSystem(this.scene);
+
+        updateProgress(35, "Arming Player...");
+        this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
+        this.player.body.position.set(-50, 5, -50); 
+        this.player.audio = this.audio;
+        
+        // Transfer audio listener to player camera
+        this.audio.listener.parent.remove(this.audio.listener);
+        this.player.camera.add(this.audio.listener);
+
+        updateProgress(45, "Loading Soundscapes...");
+        let loadedSounds = 0;
+        const totalSounds = 17;
+
+        await this.initAudio((name) => {
+            loadedSounds++;
+            const audioProgress = 45 + (loadedSounds / totalSounds) * 40;
+            updateProgress(audioProgress, `Loading Audio: ${name}...`);
+            
+            // Start action theme as soon as it's loaded
+            if (name === 'action_theme') {
+                this.audio.play('action_theme');
+            }
+        });
+
+        updateProgress(85, "Establishing Base...");
+        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
+
+        updateProgress(90, "Spawning Motorized Divisions...");
+        this.tanks = [
+            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
+            new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio, this.particles), 
+            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 }, this.audio, this.particles)    
+        ];
+        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
+        
+        updateProgress(95, "Infiltrating Enemy Lines...");
+        this.enemies = [];
+        this.allies = [];
+        this.spawnEnemies(12);
+        this.spawnAllies(5);
+
+        this.objectives = [
+            new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio),
+            new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio),
+            new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, this.audio)
+        ];
+
+        this.alliedTickets = 500;
+        this.enemyTickets = 500;
+        this.isGameOver = false;
+        this.activeVehicle = null;
+
+        this.initMinimap();
+        
+        // Music transition
+        updateProgress(100, "ALL UNITS READY. DEPLOYING...");
+        this.audio.fadeSound('action_theme', 0, 3);
+        this.audio.fadeSound('anthem', 0.5, 3);
+        this.audio.play('ambient_wind');
+
+        setTimeout(() => {
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('game-ui').classList.remove('hidden');
+            try { this.player.requestPointerLock(); } catch (e) {}
+            this.isLoaded = true;
+        }, 3000);
+    }
+
+    async initAudio(onEach) {
+        const sounds = [
+            ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
+            ['anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5],
+            ['ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4],
+            ['rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8],
+            ['rifle_cycle', 'https://cdn.freesound.org/previews/218/218151_2210086-lq.mp3', false, false, 0.6],
+            ['bullet_whiz', 'https://cdn.freesound.org/previews/192/192138_1066060-lq.mp3', false, false, 0.5],
+            ['tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6],
+            ['tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.9],
+            ['tank_tracks', 'https://cdn.freesound.org/previews/261/261763_4933934-lq.mp3', false, true, 0.3],
+            ['tank_reload', 'https://cdn.freesound.org/previews/263/263004_4933934-lq.mp3', false, false, 0.7],
+            ['heli_engine', 'https://cdn.freesound.org/previews/337/337346_4221199-lq.mp3', false, true, 0.6],
+            ['heli_fire', 'https://cdn.freesound.org/previews/253/253381_4474943-lq.mp3', false, false, 0.5],
+            ['explosion_blast', 'https://cdn.freesound.org/previews/103/103213_746654-lq.mp3', false, false, 0.9],
+            ['explosion_debris', 'https://cdn.freesound.org/previews/563/563148_1066060-lq.mp3', false, false, 0.6],
+            ['base_hum', 'https://cdn.freesound.org/previews/212/212134_4083377-lq.mp3', true, true, 0.3],
+            ['ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3],
+            ['reinforcement', 'https://cdn.freesound.org/previews/369/369932_6081467-lq.mp3', false, false, 0.7]
+        ];
+
+        for (const s of sounds) {
+            await this.audio.loadSound(...s);
+            if (onEach) onEach(s[0]);
+        }
     }
 
     initLights() {
@@ -104,6 +170,8 @@ class Game {
         this.sunLight.castShadow = true;
         this.sunLight.shadow.mapSize.set(2048, 2048);
         this.scene.add(this.sunLight);
+
+        this.scene.fog = new THREE.FogExp2(0xd0e0e3, 0.002);
     }
 
     updateEnvironment(delta) {
@@ -118,7 +186,7 @@ class Game {
         const nightColor = new THREE.Color(0x050510);
         const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
         this.scene.background = currentColor;
-        this.scene.fog.color = currentColor;
+        if (this.scene.fog) this.scene.fog.color = currentColor;
     }
 
     initPhysicsMaterial() {
@@ -173,24 +241,42 @@ class Game {
     }
 
     initUI() {
+        const initOverlay = document.getElementById('init-overlay');
+        const uiLayer = document.getElementById('ui-layer');
         const menu = document.getElementById('main-menu');
-        const gameUI = document.getElementById('game-ui');
+        const loadingScreen = document.getElementById('loading-screen');
         const deployBtn = document.getElementById('btn-mission-1');
-        deployBtn.addEventListener('click', () => {
-            this.audio.play('ui_click'); this.audio.startAudioContext(); 
-            deployBtn.innerText = "LOADING..."; deployBtn.disabled = true;
-            setTimeout(() => {
-                menu.classList.add('hidden'); gameUI.classList.remove('hidden');
-                try { this.player.requestPointerLock(); } catch (e) {}
-                deployBtn.innerText = "DEPLOY NOW"; deployBtn.disabled = false;
-            }, 500);
+        const initBtn = document.getElementById('btn-init');
+
+        initBtn.addEventListener('click', async () => {
+            initBtn.disabled = true;
+            initBtn.innerText = "LOADING COMMAND...";
+            this.audio.startAudioContext();
+            
+            // Pre-load action theme for home screen
+            await this.audio.loadSound('action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6);
+            this.audio.play('action_theme');
+            
+            initOverlay.classList.add('hidden');
+            uiLayer.classList.remove('hidden');
         });
+        
+        deployBtn.addEventListener('click', () => {
+            menu.classList.add('hidden');
+            loadingScreen.classList.remove('hidden');
+            this.loadGame();
+        });
+
         document.addEventListener('keydown', (e) => {
-            if(e.key === 'Escape') { menu.classList.remove('hidden'); gameUI.classList.add('hidden'); document.exitPointerLock(); }
-            if(e.code === 'KeyF') this.toggleVehicle();
+            if(e.key === 'Escape' && this.isLoaded) { 
+                menu.classList.remove('hidden'); 
+                document.getElementById('game-ui').classList.add('hidden'); 
+                document.exitPointerLock(); 
+            }
+            if(e.code === 'KeyF' && this.isLoaded) this.toggleVehicle();
         });
         document.addEventListener('mousedown', (e) => {
-            if (this.activeVehicle && e.button === 2) { 
+            if (this.isLoaded && this.activeVehicle && e.button === 2) { 
                 this.activeVehicle.isSniperMode = !this.activeVehicle.isSniperMode; this.audio.play('ui_click');
             }
         });
@@ -215,15 +301,27 @@ class Game {
     }
 
     onWindowResize() {
-        this.player.camera.aspect = window.innerWidth / window.innerHeight;
-        this.player.camera.updateProjectionMatrix();
+        if (this.isLoaded) {
+            this.player.camera.aspect = window.innerWidth / window.innerHeight;
+            this.player.camera.updateProjectionMatrix();
+        } else {
+            this.tempCamera.aspect = window.innerWidth / window.innerHeight;
+            this.tempCamera.updateProjectionMatrix();
+        }
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
     animate() {
         if (this.isGameOver) return;
         requestAnimationFrame(() => this.animate());
+        
         const delta = this.clock.getDelta();
+        
+        if (!this.isLoaded) {
+            this.renderer.render(this.scene, this.tempCamera);
+            return;
+        }
+
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
         this.updateEnvironment(delta);
@@ -270,7 +368,6 @@ class Game {
 
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
         
-        // --- 7.1 ALLY UPDATE ---
         this.allies.forEach(ally => {
             ally.update(delta, playerPos, this.enemies, this.objectives);
             if(ally.minimapIcon) {

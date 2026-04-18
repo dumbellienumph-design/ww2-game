@@ -35,6 +35,10 @@ export class AudioManager {
 
                 this.sounds.set(name, audio);
                 resolve(audio);
+            }, (xhr) => {
+                if (this.onProgress) {
+                    this.onProgress(name, xhr.loaded / xhr.total);
+                }
             });
         });
     }
@@ -44,8 +48,42 @@ export class AudioManager {
         const context = THREE.AudioContext.getContext();
         if (context.state === 'suspended') { context.resume(); }
         this.isAudioContextStarted = true;
-        this.play('anthem');
-        this.play('ambient_wind');
+    }
+
+    fadeSound(name, targetVolume, duration = 1.0) {
+        const sound = this.sounds.get(name);
+        if (!sound) return;
+
+        const startVolume = sound.getVolume();
+        const startTime = performance.now();
+
+        const animateFade = () => {
+            const now = performance.now();
+            const elapsed = (now - startTime) / (duration * 1000);
+
+            if (elapsed < 1) {
+                const currentVolume = startVolume + (targetVolume * this.globalVolume - startVolume) * elapsed;
+                sound.setVolume(currentVolume);
+                requestAnimationFrame(animateFade);
+            } else {
+                sound.setVolume(targetVolume * this.globalVolume);
+                if (targetVolume === 0) sound.stop();
+            }
+        };
+
+        if (targetVolume > 0 && !sound.isPlaying) {
+            sound.setVolume(0);
+            sound.play();
+        }
+        
+        animateFade();
+    }
+
+    setVolume(name, volume) {
+        const sound = this.sounds.get(name);
+        if (sound) {
+            sound.setVolume(volume * this.globalVolume);
+        }
     }
 
     updateAltitudeEffects(y) {
