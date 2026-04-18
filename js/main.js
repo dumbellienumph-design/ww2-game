@@ -64,6 +64,8 @@ class Game {
             btnBegin.innerText = "DEPLOYING...";
             
             this.audio.startAudioContext();
+            
+            // Start loading world immediately
             await this.loadAndDeploy();
             
             homeScreen.classList.add('hidden');
@@ -80,31 +82,19 @@ class Game {
     }
 
     async loadAndDeploy() {
-        const soundAssets = [
-            ['anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5],
-            ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
-            ['rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8],
-            ['tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6],
-            ['explosion_blast', 'https://cdn.freesound.org/previews/103/103213_746654-lq.mp3', false, false, 0.9],
-            ['ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3]
-        ];
-
-        // LOAD EVERYTHING INSTANTLY
-        await Promise.all([
-            ...soundAssets.map(s => this.audio.loadSound(...s)),
-            (async () => {
-                this.terrain = new Terrain(this.scene, this.world);
-                this.initLights();
-                this.initPhysicsMaterial();
-                this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
-                this.particles = new ParticleSystem(this.scene);
-                this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
-                this.player.body.position.set(-50, 5, -50); 
-                this.player.audio = this.audio;
-                this.audio.listener.parent.remove(this.audio.listener);
-                this.player.camera.add(this.audio.listener);
-            })()
-        ]);
+        // --- 1. CORE WORLD (Await this only) ---
+        this.terrain = new Terrain(this.scene, this.world);
+        this.initLights();
+        this.initPhysicsMaterial();
+        this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
+        this.particles = new ParticleSystem(this.scene);
+        this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
+        this.player.body.position.set(-50, 5, -50); 
+        this.player.audio = this.audio;
+        
+        // Setup listener
+        this.audio.listener.parent.remove(this.audio.listener);
+        this.player.camera.add(this.audio.listener);
 
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
         this.objectives = [
@@ -123,12 +113,26 @@ class Game {
         this.spawnAllies(5);
         this.initMinimap();
 
-        this.audio.play('anthem');
-        this.audio.fadeSound('anthem', 0.1, 10); 
-        this.audio.fadeSound('action_theme', 0.6, 2);
-        
+        // --- 2. START THE GAME IMMEDIATELY ---
         try { this.player.requestPointerLock(); } catch (e) {}
         this.isLoaded = true;
+
+        // --- 3. LOAD AUDIO IN BACKGROUND (Do not await) ---
+        const soundAssets = [
+            ['anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5],
+            ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
+            ['rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8],
+            ['tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6],
+            ['explosion_blast', 'https://cdn.freesound.org/previews/103/103213_746654-lq.mp3', false, false, 0.9],
+            ['ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3]
+        ];
+
+        soundAssets.forEach(s => {
+            this.audio.loadSound(...s).then(() => {
+                if (s[0] === 'action_theme') this.audio.play('action_theme');
+                if (s[0] === 'ambient_wind') this.audio.play('ambient_wind');
+            });
+        });
     }
 
     initLights() {
