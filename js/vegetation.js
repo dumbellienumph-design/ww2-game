@@ -9,7 +9,7 @@ export class Vegetation {
         
         this.treeCount = 100;
         this.bushCount = 150;
-        this.grassCount = 30000;
+        this.grassCount = 5000;
 
         this.objects = []; // List to track all trees and bushes
         
