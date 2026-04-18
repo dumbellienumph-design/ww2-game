@@ -223,19 +223,26 @@ class Game {
         this.initMinimap();
         await yieldThread();
 
-        updateUI(100, "COMMAND AUTHORIZED. DEPLOYING.");
+        updateUI(100, "COMMAND AUTHORIZED. AWAITING DEPLOYMENT.");
 
         clearInterval(this.tipInterval);
-        this.audio.fadeSound('anthem', 0, 2);
-        this.audio.fadeSound('action_theme', 0.6, 2);
-        this.audio.play('ambient_wind');
-
+        
         setTimeout(() => {
-            document.getElementById('loading-screen').classList.add('hidden');
-            document.getElementById('ui-layer').classList.remove('hidden');
-            try { this.player.requestPointerLock(); } catch (e) {}
-            this.isLoaded = true;
-        }, 800);
+            const btnDeploy = document.getElementById('btn-deploy');
+            btnDeploy.classList.remove('hidden');
+            
+            btnDeploy.addEventListener('click', () => {
+                document.getElementById('loading-screen').classList.add('hidden');
+                document.getElementById('ui-layer').classList.remove('hidden');
+                
+                this.audio.fadeSound('anthem', 0, 2);
+                this.audio.fadeSound('action_theme', 0.6, 2);
+                this.audio.play('ambient_wind');
+
+                try { this.player.requestPointerLock(); } catch (e) {}
+                this.isLoaded = true;
+            });
+        }, 500);
     }
 
     initLights() {
