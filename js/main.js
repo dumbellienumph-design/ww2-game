@@ -43,21 +43,7 @@ class Game {
         this.audio = new AudioManager(this.tempCamera);
         this.isLoaded = false;
         this.isGameOver = false;
-        this.isPlayerActive = false; // Allies wait for this
-        
-        this.tips = [
-            "TIP: Allies will wait for your first move before advancing.",
-            "TIP: Enemies are fortified deep in the territory—move out!",
-            "TIP: Capture strategic points to bleed the enemy's reinforcement tickets.",
-            "TIP: Press F to enter or exit available vehicles on the battlefield.",
-            "TIP: The mini-map shows friendly units in green and detected enemies in red."
-        ];
-
-        this.loadingImages = [
-            "https://images.unsplash.com/photo-1599032909756-5dee8c65f6d6?auto=format&fit=crop&q=80&w=1920",
-            "https://images.unsplash.com/photo-1518112166137-859095689100?auto=format&fit=crop&q=80&w=1920",
-            "https://images.unsplash.com/photo-1533560913523-c0978282c06a?auto=format&fit=crop&q=80&w=1920"
-        ];
+        this.isPlayerActive = false; 
 
         this.activeRadius = 200; 
         this.cullingTimer = 0;
@@ -71,14 +57,17 @@ class Game {
 
     initUI() {
         const homeScreen = document.getElementById('home-screen');
-        const loadingScreen = document.getElementById('loading-screen');
         const btnBegin = document.getElementById('btn-begin');
 
-        btnBegin.addEventListener('click', () => {
-            homeScreen.classList.add('hidden');
-            loadingScreen.classList.remove('hidden');
+        btnBegin.addEventListener('click', async () => {
+            btnBegin.disabled = true;
+            btnBegin.innerText = "DEPLOYING...";
+            
             this.audio.startAudioContext();
-            this.loadGame();
+            await this.loadAndDeploy();
+            
+            homeScreen.classList.add('hidden');
+            document.getElementById('ui-layer').classList.remove('hidden');
         });
 
         const btnResume = document.getElementById('btn-resume');
@@ -90,41 +79,7 @@ class Game {
         }
     }
 
-    startTipCycle() {
-        const tipElement = document.getElementById('loading-tip');
-        const bgElement = document.getElementById('loading-background');
-        let tipIndex = 0;
-        let imgIndex = 0;
-        bgElement.style.backgroundImage = `url('${this.loadingImages[0]}')`;
-
-        this.tipInterval = setInterval(() => {
-            tipIndex = (tipIndex + 1) % this.tips.length;
-            imgIndex = (imgIndex + 1) % this.loadingImages.length;
-            tipElement.style.opacity = 0;
-            setTimeout(() => {
-                tipElement.innerText = this.tips[tipIndex];
-                bgElement.style.backgroundImage = `url('${this.loadingImages[imgIndex]}')`;
-                tipElement.style.opacity = 1;
-            }, 500);
-        }, 3000); 
-    }
-
-    async loadGame() {
-        const loadingBar = document.getElementById('loading-bar');
-        const loadingStatus = document.getElementById('loading-status');
-        const loadingPercent = document.getElementById('loading-percentage');
-        
-        this.startTipCycle();
-
-        const updateUI = (p, status) => {
-            loadingBar.style.width = `${p}%`;
-            loadingPercent.innerText = `${Math.floor(p)}%`;
-            if (status) loadingStatus.innerText = status;
-        };
-
-        // EXTREME OPTIMIZATION: Simultaneous loading of everything
-        updateUI(10, "INITIALIZING ASSETS...");
-        
+    async loadAndDeploy() {
         const soundAssets = [
             ['anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5],
             ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
@@ -134,7 +89,7 @@ class Game {
             ['ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3]
         ];
 
-        // Load terrain and sounds in parallel
+        // LOAD EVERYTHING INSTANTLY
         await Promise.all([
             ...soundAssets.map(s => this.audio.loadSound(...s)),
             (async () => {
@@ -151,8 +106,6 @@ class Game {
             })()
         ]);
 
-        updateUI(80, "FINALIZING WORLD...");
-
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
         this.objectives = [
             new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio),
@@ -166,20 +119,12 @@ class Game {
         ];
         this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
         
-        this.spawnEnemies(15); // Will spawn outside base
+        this.spawnEnemies(15); 
         this.spawnAllies(5);
         this.initMinimap();
 
-        updateUI(100, "READY.");
-
-        clearInterval(this.tipInterval);
-        
-        // INSTANT START
-        document.getElementById('loading-screen').classList.add('hidden');
-        document.getElementById('ui-layer').classList.remove('hidden');
-        
         this.audio.play('anthem');
-        this.audio.fadeSound('anthem', 0.2, 5); // Keep anthem low in bg
+        this.audio.fadeSound('anthem', 0.1, 10); 
         this.audio.fadeSound('action_theme', 0.6, 2);
         
         try { this.player.requestPointerLock(); } catch (e) {}
@@ -208,7 +153,7 @@ class Game {
         for(let i=0; i<count; i++) {
             let x, z;
             do { x = (Math.random() - 0.5) * 800; z = (Math.random() - 0.5) * 800; } 
-            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 300); // 300m away from base
+            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 300); 
             let type = (Math.random() > 0.85 ? 'tank' : 'infantry');
             const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, this.audio, type);
             const iconColor = type === 'tank' ? 0xffaa00 : 0xff0000;
@@ -297,7 +242,6 @@ class Game {
             return;
         }
 
-        // Check if player has moved for the first time
         if (!this.isPlayerActive) {
             const vel = this.player.body.velocity;
             if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true;
@@ -322,7 +266,6 @@ class Game {
         if (this.alliedTickets <= 0 || this.enemyTickets <= 0) this.endGame();
 
         this.audio.updateAltitudeEffects(this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y);
-        
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
         
         if (this.activeVehicle) {

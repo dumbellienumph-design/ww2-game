@@ -31,32 +31,13 @@
         </div>
 
         <div class="menu-buttons">
-            <button id="btn-begin">BEGIN MISSION</button>
+            <button id="btn-begin">DEPLOY TO BATTLE</button>
         </div>
         
-        <div class="disclaimer">PRESS BEGIN TO INITIALIZE FIELD COMMAND</div>
+        <div class="disclaimer">CLICK TO INITIALIZE FIELD COMMAND AND DEPLOY</div>
     </div>
 
-    <!-- 2. LOADING SCREEN (Synchronized 0-100%) -->
-    <div id="loading-screen" class="overlay hidden">
-        <div id="loading-background"></div>
-        <div class="loading-content">
-            <h2 id="loading-title">INITIALIZING DEPLOYMENT</h2>
-            <div class="loading-container">
-                <div id="loading-bar"></div>
-            </div>
-            <div class="loading-stats">
-                <span id="loading-status">CALIBRATING TACTICAL DATA...</span>
-                <span id="loading-percentage">0%</span>
-            </div>
-        </div>
-        
-        <div class="briefing-ticker">
-            <p id="loading-tip">TIP: Use Tanks to provide cover for infantry when approaching MG nests.</p>
-        </div>
-    </div>
-
-    <!-- 3. GAME UI (Hidden until 100%) -->
+    <!-- 3. GAME UI (Hidden until Deploy) -->
     <div id="ui-layer" class="hidden">
         <div id="game-ui">
             <div id="crosshair">
