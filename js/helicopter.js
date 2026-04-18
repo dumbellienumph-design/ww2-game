@@ -3,10 +3,11 @@ import * as CANNON from 'cannon-es';
 import { VFX } from './vfx.js';
 
 export class Helicopter {
-    constructor(scene, world, position, audio) {
+    constructor(scene, world, position, audio, particles) {
         this.scene = scene;
         this.world = world;
         this.audio = audio;
+        this.particles = particles;
         
         this.group = new THREE.Group();
         this.scene.add(this.group);
@@ -81,7 +82,6 @@ export class Helicopter {
             return;
         }
 
-        // --- AUDIO: ROTOR WHIR ---
         if (this.audio) {
             this.audio.play('heli_engine');
             const pitchRate = 0.8 + (targetRotorSpeed / 20) * 0.4;
@@ -126,6 +126,10 @@ export class Helicopter {
 
         const tip = this.group.position.clone().add(new THREE.Vector3(0, -0.5, -3).applyQuaternion(this.group.quaternion));
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
+
+        // --- VFX: MUZZLE FLASH ---
+        if(this.particles) this.particles.createMuzzleFlash(tip, dir, false);
+
         const bulletMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
         this.scene.add(bulletMesh);
         const bulletBody = new CANNON.Body({

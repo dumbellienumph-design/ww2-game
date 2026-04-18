@@ -3,10 +3,11 @@ import * as CANNON from 'cannon-es';
 import { VFX } from './vfx.js';
 
 export class Tank {
-    constructor(scene, world, position, audio) {
+    constructor(scene, world, position, audio, particles) {
         this.scene = scene;
         this.world = world;
         this.audio = audio;
+        this.particles = particles;
         
         this.group = new THREE.Group();
         this.scene.add(this.group);
@@ -23,6 +24,8 @@ export class Tank {
         this.elevationSpeed = 0.2;
 
         this.initAimingReticle();
+        
+        this.exhaustTimer = 0;
     }
 
     initMinimapIcon() {
@@ -52,7 +55,6 @@ export class Tank {
             linearDamping: 0.2,
             angularDamping: 0.1
         });
-        
         this.body.shapeOffsets[0].set(0, 0.5, 0);
         this.world.addBody(this.body);
         this.body.mesh = this.group;
@@ -62,17 +64,13 @@ export class Tank {
         const tigerGrey = new THREE.MeshStandardMaterial({ color: 0x4a4e4d, roughness: 0.8, metalness: 0.2 });
         const darkSteel = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.8, roughness: 0.4 });
         const rustMetal = new THREE.MeshStandardMaterial({ color: 0x3d3535, metalness: 0.5, roughness: 0.7 });
-        
         const vOffset = -0.5;
-
         const mainHull = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.3, 7.5), tigerGrey);
         mainHull.position.y = 0.65 + vOffset;
         this.group.add(mainHull);
-
         const frontArmor = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.2, 0.4), tigerGrey);
         frontArmor.position.set(0, 1.4 + vOffset, -3.2);
         this.group.add(frontArmor);
-
         const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16);
         wheelGeo.rotateZ(Math.PI / 2);
         for (let i = 0; i < 8; i++) {
@@ -85,36 +83,33 @@ export class Tank {
             wr.position.x = xPos;
             this.group.add(wr);
         }
-
         this.turretGroup = new THREE.Group();
         this.turretGroup.position.set(0, 1.6 + vOffset, 0);
         this.group.add(this.turretGroup);
-
         const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.9, 1.2, 16), tigerGrey);
         this.turretGroup.add(turretBase);
-
         const mantlet = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 0.6), tigerGrey);
         mantlet.position.set(0, 0, -1.8);
         this.turretGroup.add(mantlet);
-
         this.barrelGroup = new THREE.Group();
         this.barrelGroup.position.set(0, 0, -1.8);
         this.turretGroup.add(this.barrelGroup);
-
         const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 5.5), rustMetal);
         barrel.rotateX(Math.PI / 2);
         barrel.position.z = -2.75;
         this.barrelGroup.add(barrel);
-
         const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.8, 12), darkSteel);
         brake.rotateX(Math.PI / 2);
         brake.position.z = -5.8;
         this.barrelGroup.add(brake);
 
+        // Exhaust Ports for Smoke
+        this.exhaustL = new THREE.Object3D(); this.exhaustL.position.set(-0.8, 1.0 + vOffset, 3.8); this.group.add(this.exhaustL);
+        this.exhaustR = new THREE.Object3D(); this.exhaustR.position.set(0.8, 1.0 + vOffset, 3.8); this.group.add(this.exhaustR);
+
         this.chaseCameraAnchor = new THREE.Object3D();
         this.chaseCameraAnchor.position.set(0, 6, 12); 
         this.group.add(this.chaseCameraAnchor);
-
         this.sniperCameraAnchor = new THREE.Object3D();
         this.sniperCameraAnchor.position.set(0, 0.3, -1.5); 
         this.turretGroup.add(this.sniperCameraAnchor);
@@ -127,11 +122,23 @@ export class Tank {
             return;
         }
 
-        // --- AUDIO: DYNAMIC ENGINE ---
+        const speed = this.body.velocity.length();
+
+        // --- VFX: EXHAUST SMOKE ---
+        this.exhaustTimer += delta;
+        if (this.exhaustTimer > 0.1) {
+            const worldPosL = new THREE.Vector3(); this.exhaustL.getWorldPosition(worldPosL);
+            const worldPosR = new THREE.Vector3(); this.exhaustR.getWorldPosition(worldPosR);
+            const smokeVel = new THREE.Vector3(0, 1, 2).applyQuaternion(this.group.quaternion);
+            if(this.particles) {
+                this.particles.createExhaustSmoke(worldPosL, smokeVel);
+                this.particles.createExhaustSmoke(worldPosR, smokeVel);
+            }
+            this.exhaustTimer = 0;
+        }
+
         if (this.audio) {
             this.audio.play('tank_engine');
-            const speed = this.body.velocity.length();
-            // Maybach V12 roar: Pitch shifts from 1.0 (idle) up to 1.8 (full speed)
             const pitchRate = 1.0 + (speed / 15) * 0.8;
             this.audio.setPlaybackRate('tank_engine', pitchRate);
         }
@@ -196,10 +203,13 @@ export class Tank {
     fire() {
         if(this.audio) this.audio.play('tank_fire');
 
-        this.barrelGroup.position.z += 0.4;
-        setTimeout(() => this.barrelGroup.position.z -= 0.4, 60);
+        // --- VFX: MUZZLE FLASH ---
         const tip = new THREE.Vector3(0, 0, -6.5).applyMatrix4(this.barrelGroup.matrixWorld);
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.barrelGroup.getWorldQuaternion(new THREE.Quaternion()));
+        if(this.particles) this.particles.createMuzzleFlash(tip, dir, true);
+
+        this.barrelGroup.position.z += 0.4;
+        setTimeout(() => this.barrelGroup.position.z -= 0.4, 60);
         const shellMesh = new THREE.Mesh(new THREE.SphereGeometry(0.4), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
         this.scene.add(shellMesh);
         const shellBody = new CANNON.Body({

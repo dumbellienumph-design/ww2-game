@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 export class Player {
-    constructor(scene, world, domElement, audio) {
+    constructor(scene, world, domElement, audio, particles) {
         this.scene = scene;
         this.world = world;
         this.domElement = domElement;
         this.audio = audio;
+        this.particles = particles;
         
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.layers.enable(1); 
@@ -26,7 +27,7 @@ export class Player {
             shoot: false
         };
 
-        this.fireRate = 0.6; // Bolt action delay
+        this.fireRate = 0.6; 
         this.fireTimer = 0;
 
         this.initPhysics();
@@ -96,6 +97,12 @@ export class Player {
         const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.4), woodMat);
         stock.position.set(0, -0.05, 0.4);
         this.gunGroup.add(stock);
+        
+        // Muzzle position helper
+        this.muzzle = new THREE.Object3D();
+        this.muzzle.position.set(0, 0, -0.7);
+        this.gunGroup.add(this.muzzle);
+
         this.gunGroup.position.set(0.3, -0.3, -0.5);
         this.camera.add(this.gunGroup);
         this.scene.add(this.camera);
@@ -116,20 +123,22 @@ export class Player {
 
     shoot() {
         if (this.ammo <= 0) { 
-            if(this.audio) this.audio.play('ui_click'); // Out of ammo sound
+            if(this.audio) this.audio.play('ui_click');
             return; 
         }
         this.ammo--;
 
-        // --- AUDIO: REALISTIC RIFLE SEQUENCE ---
         if(this.audio) {
-            // 1. Muzzle Blast (with random pitch for variance)
             this.audio.play('rifle_fire', { randomPitch: true });
-            
-            // 2. Mechanical Bolt Cycle (Delayed by 200ms)
-            setTimeout(() => {
-                this.audio.play('rifle_cycle');
-            }, 250);
+            setTimeout(() => { this.audio.play('rifle_cycle'); }, 250);
+        }
+
+        // --- VFX: MUZZLE FLASH ---
+        if(this.particles) {
+            const muzzleWorldPos = new THREE.Vector3();
+            this.muzzle.getWorldPosition(muzzleWorldPos);
+            const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+            this.particles.createMuzzleFlash(muzzleWorldPos, dir, false);
         }
 
         this.gunGroup.position.z += 0.05;

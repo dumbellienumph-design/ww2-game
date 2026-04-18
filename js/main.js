@@ -10,6 +10,7 @@ import { Vegetation } from './vegetation.js';
 import { Base } from './base.js';
 import { AudioManager } from './audio.js';
 import { Objective } from './objective.js';
+import { ParticleSystem } from './particles.js';
 
 class Game {
     constructor() {
@@ -28,16 +29,18 @@ class Game {
         this.world = new CANNON.World();
         this.world.gravity.set(0, -25, 0);
 
-        // --- 4.1 DYNAMIC DAY/NIGHT ---
-        this.timeOfDay = 0; // 0 to 2PI
-        this.daySpeed = 0.05; // Progression speed
+        this.timeOfDay = 0;
+        this.daySpeed = 0.05;
 
         this.initLights();
         this.initPhysicsMaterial();
         this.terrain = new Terrain(this.scene, this.world);
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         
-        this.player = new Player(this.scene, this.world, this.renderer.domElement, null);
+        // --- PARTICLE SYSTEM ---
+        this.particles = new ParticleSystem(this.scene);
+
+        this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
         this.player.body.position.set(-50, 5, -50); 
 
         this.audio = new AudioManager(this.player.camera);
@@ -47,11 +50,11 @@ class Game {
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio);
 
         this.tanks = [
-            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio), 
-            new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio), 
-            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 }, this.audio)    
+            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
+            new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio, this.particles), 
+            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 }, this.audio, this.particles)    
         ];
-        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio)];
+        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
         this.enemies = [];
         this.allies = [];
         this.activeVehicle = null;
@@ -98,7 +101,6 @@ class Game {
     initLights() {
         this.ambientLight = new THREE.AmbientLight(0xd0e0e3, 0.4);
         this.scene.add(this.ambientLight);
-        
         this.sunLight = new THREE.DirectionalLight(0xfff5e6, 0.8);
         this.sunLight.position.set(100, 150, 50);
         this.sunLight.castShadow = true;
@@ -113,28 +115,18 @@ class Game {
 
     updateEnvironment(delta) {
         this.timeOfDay += delta * this.daySpeed;
-        
-        // Sun movement
         const sunX = Math.cos(this.timeOfDay) * 200;
         const sunY = Math.sin(this.timeOfDay) * 200;
         this.sunLight.position.set(sunX, sunY, 50);
-
-        // Day/Night logic
         const isDay = sunY > 0;
-        const dayFactor = Math.max(0, Math.min(1, sunY / 50)); // Fade out as sun sets
-        
+        const dayFactor = Math.max(0, Math.min(1, sunY / 50));
         this.sunLight.intensity = dayFactor * 0.8;
         this.ambientLight.intensity = 0.1 + (dayFactor * 0.3);
-
-        // Background & Fog color shift
         const dayColor = new THREE.Color(0x8899a6);
         const nightColor = new THREE.Color(0x050510);
         const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
-        
         this.scene.background = currentColor;
         this.scene.fog.color = currentColor;
-
-        // Searchlights activate at night
         if (this.base) {
             this.base.group.traverse(obj => {
                 if (obj.name === 'searchlight_beam') {
@@ -184,7 +176,6 @@ class Game {
         this.minimapCamera.up.set(0, 0, -1);
         this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
         this.playerIcon.rotation.x = -Math.PI / 2; this.playerIcon.layers.set(1); this.scene.add(this.playerIcon);
-        
         this.compassLabels = {};
         ['N', 'S', 'E', 'W'].forEach(label => {
             const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
@@ -251,6 +242,7 @@ class Game {
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
         this.updateEnvironment(delta);
+        this.particles.update(delta, this.player.camera);
 
         this.objectives.forEach(obj => obj.update(delta, [this.player, ...this.allies], this.enemies));
         let alliedPoints = this.objectives.filter(o => o.owner === 'allied').length;
@@ -283,7 +275,7 @@ class Game {
         } else { this.player.update(delta, this.terrain); }
 
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
-        this.enemies.forEach((enemy, index) => {
+        this.enemies.forEach((enemy) => {
             enemy.update(delta, playerPos, this.player);
             if (enemy.minimapIcon) enemy.minimapIcon.position.set(enemy.body.position.x, 100, enemy.body.position.z);
             if (enemy.isDead && enemy.minimapIcon) { this.scene.remove(enemy.minimapIcon); enemy.minimapIcon = null; }
@@ -291,7 +283,6 @@ class Game {
 
         document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
         document.getElementById('ammo').innerText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
-        
         this.playerIcon.position.set(playerPos.x, 101, playerPos.z);
         const camEuler = new THREE.Euler().setFromQuaternion(this.player.camera.quaternion, 'YXZ');
         this.playerIcon.rotation.z = camEuler.y;
