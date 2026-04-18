@@ -11,6 +11,31 @@ import { Base } from './base.js';
 import { Objective } from './objective.js';
 import { ParticleSystem } from './particles.js';
 
+class GameUI {
+    static addKill(killer, victim, isPlayerKiller = false) {
+        const feed = document.getElementById('kill-feed');
+        if (!feed) return;
+        const msg = document.createElement('div');
+        msg.className = 'kill-msg';
+        const killerClass = isPlayerKiller ? 'player' : (killer === 'ALLY' ? 'allied' : 'enemy');
+        const victimClass = victim === 'ENEMY' ? 'enemy' : 'allied';
+        msg.innerHTML = `<span class="${killerClass}">${killer}</span> ➔ <span class="${victimClass}">${victim}</span>`;
+        feed.prepend(msg);
+        setTimeout(() => msg.remove(), 5000);
+    }
+
+    static notify(text, color = '#ff0') {
+        const container = document.getElementById('tactical-notify');
+        if (!container) return;
+        const msg = document.createElement('div');
+        msg.className = 'xp-popup';
+        msg.style.color = color;
+        msg.innerText = text;
+        container.appendChild(msg);
+        setTimeout(() => msg.remove(), 2000);
+    }
+}
+
 class Game {
     constructor() {
         this.canvas = document.querySelector('#game-canvas');
@@ -21,8 +46,6 @@ class Game {
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        
-        // --- PROPER SHADOW MAPPING ---
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -31,8 +54,6 @@ class Game {
         this.minimapRenderer.setSize(220, 220);
 
         this.scene = new THREE.Scene();
-        
-        // --- DRAMATIC OVERCAST SKY ---
         this.scene.background = new THREE.Color(0x33383d);
         this.scene.fog = new THREE.FogExp2(0x33383d, 0.003);
         
@@ -69,6 +90,8 @@ class Game {
         window.addEventListener('resize', () => this.onWindowResize());
         this.clock = new THREE.Clock();
         this.animate();
+
+        GameUI.notify("MISSION STARTED: SECURE THE SECTOR", "#ff0");
     }
 
     initWorld() {
@@ -77,13 +100,9 @@ class Game {
         this.initPhysicsMaterial();
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         this.particles = new ParticleSystem(this.scene);
-        
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
-        
-        // --- PLAYER SPAWN: OPEN AREA FACING BASE ---
-        // Base is at (-50, 0, -50). Spawn player at (-50, 5, 50) looking North
         this.player.body.position.set(-50, 5, 40); 
-        this.player.yaw = Math.PI; // Face North towards base
+        this.player.yaw = Math.PI;
         this.player.pitch = -0.1;
 
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, null, this.particles);
@@ -107,22 +126,14 @@ class Game {
     initLights() {
         this.ambientLight = new THREE.AmbientLight(0x404040, 0.4);
         this.scene.add(this.ambientLight);
-
-        // --- DRAMATIC DIRECTIONAL LIGHT FOR SHADOWS ---
         this.sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
         this.sunLight.position.set(100, 200, 100);
         this.sunLight.castShadow = true;
-        
-        // Optimize shadow camera for the base area
         this.sunLight.shadow.camera.left = -200;
         this.sunLight.shadow.camera.right = 200;
         this.sunLight.shadow.camera.top = 200;
         this.sunLight.shadow.camera.bottom = -200;
-        this.sunLight.shadow.camera.near = 0.5;
-        this.sunLight.shadow.camera.far = 1000;
         this.sunLight.shadow.mapSize.set(2048, 2048);
-        this.sunLight.shadow.bias = -0.0005;
-        
         this.scene.add(this.sunLight);
     }
 
@@ -144,7 +155,12 @@ class Game {
             const iconColor = type === 'tank' ? 0xffaa00 : 0xff0000;
             const icon = new THREE.Mesh(new THREE.CircleGeometry(type === 'tank' ? 6 : 3, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
-            enemy.minimapIcon = icon; this.enemies.push(enemy);
+            enemy.minimapIcon = icon; 
+            enemy.onKilledByPlayer = () => {
+                GameUI.addKill("YOU", enemy.type.toUpperCase(), true);
+                GameUI.notify("+100 ENEMY NEUTRALIZED", "#ff0");
+            };
+            this.enemies.push(enemy);
         }
     }
 
@@ -212,7 +228,16 @@ class Game {
         this.base.update(delta, this.clock.elapsedTime);
         this.particles.update(delta, this.player.camera);
         
-        this.objectives.forEach(obj => obj.update(delta, [this.player, ...this.allies], this.enemies));
+        this.objectives.forEach(obj => {
+            const oldOwner = obj.owner;
+            obj.update(delta, [this.player, ...this.allies], this.enemies);
+            if (obj.owner !== oldOwner && obj.owner === 'allied') {
+                GameUI.notify(`OBJECTIVE ${obj.name} SECURED`, "#0f0");
+            } else if (obj.owner !== oldOwner && obj.owner === 'enemy') {
+                GameUI.notify(`OBJECTIVE ${obj.name} LOST`, "#f00");
+            }
+        });
+
         let alliedPoints = this.objectives.filter(o => o.owner === 'allied').length;
         let enemyPoints = this.objectives.filter(o => o.owner === 'enemy').length;
         if (enemyPoints > alliedPoints) this.alliedTickets -= (enemyPoints - alliedPoints) * delta * 2;
@@ -242,7 +267,15 @@ class Game {
 
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
         this.allies.forEach(ally => ally.update(delta, playerPos, this.enemies, this.objectives, this.isPlayerActive));
-        this.enemies.forEach(enemy => enemy.update(delta, playerPos, this.player));
+        
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
+            enemy.update(delta, playerPos, this.player);
+            if (enemy.isDead && !enemy.wasCounted) {
+                if (enemy.onKilledByPlayer) enemy.onKilledByPlayer();
+                enemy.wasCounted = true;
+            }
+        }
 
         this.updateUIGameplay(playerPos);
         this.renderer.render(this.scene, this.player.camera);
