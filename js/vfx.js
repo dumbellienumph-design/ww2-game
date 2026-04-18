@@ -3,13 +3,8 @@ import * as CANNON from 'cannon-es';
 
 export class VFX {
     static createExplosion(scene, world, position, radius = 5, damage = 50, audio = null) {
-        // --- VISUAL EFFECTS ---
         const geo = new THREE.SphereGeometry(radius);
-        const mat = new THREE.MeshBasicMaterial({ 
-            color: 0xff4500, 
-            transparent: true, 
-            opacity: 0.8 
-        });
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.8 });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.copy(position);
         scene.add(mesh);
@@ -21,97 +16,109 @@ export class VFX {
             const pMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
             const p = new THREE.Mesh(partGeo, pMat);
             p.position.copy(position);
-            const dir = new THREE.Vector3(
-                (Math.random() - 0.5),
-                (Math.random() - 0.5) + 0.5, 
-                (Math.random() - 0.5)
-            ).normalize();
+            const dir = new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5) + 0.5, (Math.random() - 0.5)).normalize();
             p.userData.velocity = dir.multiplyScalar(Math.random() * 30 + 15);
             scene.add(p);
             particles.push(p);
         }
 
-        // --- SCORCHED EARTH: BURN MARK ---
         this.createBurnMark(scene, position, radius);
 
-        // --- AUDIO ---
         if (audio && typeof audio.play === 'function') {
             audio.play('explosion_blast', { randomPitch: true });
-            setTimeout(() => {
-                if (typeof audio.play === 'function') audio.play('explosion_debris', { randomPitch: true });
-            }, 150);
         }
 
-        let scale = 0.1;
         const startTime = Date.now();
         const duration = 600;
-
         const animate = () => {
             const elapsed = Date.now() - startTime;
             const progress = elapsed / duration;
-
             if (progress >= 1) {
                 scene.remove(mesh);
                 particles.forEach(p => scene.remove(p));
                 return;
             }
-
-            scale = progress * 2.5;
-            mesh.scale.set(scale, scale, scale);
+            mesh.scale.set(progress * 2.5, progress * 2.5, progress * 2.5);
             mesh.material.opacity = 1 - progress;
-
             particles.forEach(p => {
                 p.position.add(p.userData.velocity.clone().multiplyScalar(0.016));
                 p.userData.velocity.y -= 0.5; 
                 p.userData.velocity.multiplyScalar(0.96); 
-                p.rotation.x += 0.2;
-                p.rotation.y += 0.2;
             });
-
             requestAnimationFrame(animate);
         };
         animate();
 
-        // Physics: Area of Effect
         world.bodies.forEach(body => {
             const dist = body.position.distanceTo(new CANNON.Vec3(position.x, position.y, position.z));
             if (dist < radius) {
-                if (body.onHit) {
-                    const falloff = 1 - (dist / radius);
-                    body.onHit(damage * falloff);
-                }
+                if (body.onHit) body.onHit(damage * (1 - (dist / radius)));
                 const dir = body.position.vsub(new CANNON.Vec3(position.x, position.y, position.z)).unit();
-                const force = 15000 * (1 - dist/radius);
-                body.applyImpulse(dir.scale(force), body.position);
+                body.applyImpulse(dir.scale(15000 * (1 - dist/radius)), body.position);
             }
         });
     }
 
     static createBurnMark(scene, position, radius) {
-        const markGeo = new THREE.CircleGeometry(radius * 0.8, 16);
-        const markMat = new THREE.MeshBasicMaterial({ 
-            color: 0x111111, 
-            transparent: true, 
-            opacity: 0.7,
-            depthWrite: false, 
-            polygonOffset: true,
-            polygonOffsetFactor: -4
-        });
-        const mark = new THREE.Mesh(markGeo, markMat);
+        const mark = new THREE.Mesh(
+            new THREE.CircleGeometry(radius * 0.8, 16),
+            new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
+        );
         mark.rotation.x = -Math.PI / 2;
         mark.position.copy(position);
         mark.position.y = 0.15; 
         scene.add(mark);
+        setTimeout(() => scene.remove(mark), 25000);
+    }
 
+    // --- NEW: BULLET IMPACT EFFECTS ---
+    static createBulletHole(scene, hit) {
+        const hole = new THREE.Mesh(
+            new THREE.CircleGeometry(0.15, 8),
+            new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
+        );
+        
+        // Orient to surface normal
+        hole.position.copy(hit.point).add(hit.face.normal.clone().multiplyScalar(0.01));
+        const lookTarget = hit.point.clone().add(hit.face.normal);
+        hole.lookAt(lookTarget);
+        
+        scene.add(hole);
+        
+        // Auto-cleanup for performance
         setTimeout(() => {
-            const startTime = Date.now();
+            const start = Date.now();
             const fade = () => {
-                const elapsed = Date.now() - startTime;
-                mark.material.opacity = 0.7 * (1 - (elapsed / 5000));
-                if (elapsed < 5000) requestAnimationFrame(fade);
-                else scene.remove(mark);
+                const p = (Date.now() - start) / 2000;
+                if(p < 1) { hole.material.opacity = 0.9 * (1-p); requestAnimationFrame(fade); }
+                else scene.remove(hole);
             };
             fade();
-        }, 25000);
+        }, 15000);
+    }
+
+    static createImpactVFX(scene, position, normal, type = 'concrete') {
+        const color = (type === 'dirt') ? 0x554433 : 0xaaaaaa;
+        const count = 6;
+        const partGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+        
+        for(let i=0; i<count; i++) {
+            const p = new THREE.Mesh(partGeo, new THREE.MeshBasicMaterial({ color: color }));
+            p.position.copy(position);
+            const bounce = normal.clone().add(new THREE.Vector3((Math.random()-0.5)*2, (Math.random()-0.5)*2, (Math.random()-0.5)*2)).normalize();
+            p.userData.velocity = bounce.multiplyScalar(Math.random() * 8 + 4);
+            scene.add(p);
+            
+            const start = Date.now();
+            const anim = () => {
+                const elapsed = (Date.now() - start) / 500;
+                if(elapsed < 1) {
+                    p.position.add(p.userData.velocity.clone().multiplyScalar(0.016));
+                    p.userData.velocity.y -= 0.4;
+                    requestAnimationFrame(anim);
+                } else { scene.remove(p); }
+            };
+            anim();
+        }
     }
 }

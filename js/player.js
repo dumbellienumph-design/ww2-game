@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Grenade } from './grenade.js';
+import { VFX } from './vfx.js';
 
 export class Player {
     constructor(scene, world, domElement, audio, particles) {
@@ -61,8 +62,7 @@ export class Player {
         this.pitch = 0;
         this.yaw = 0;
 
-        // --- SUPPRESSION STATE ---
-        this.suppression = 0; // 0 to 1
+        this.suppression = 0; 
         this.suppressionOverlay = document.getElementById('suppression-overlay');
 
         this.initPhysics();
@@ -93,12 +93,9 @@ export class Player {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === this.domElement) {
                 const sensitivity = (this.moveState.ads ? 0.001 : 0.002) * (1 - this.suppression * 0.5);
-                
                 this.yaw -= e.movementX * sensitivity;
                 this.pitch -= e.movementY * sensitivity;
-                
                 this.pitch = Math.max(-Math.PI / 2.1, Math.min(Math.PI / 2.1, this.pitch));
-                
                 this.sway.x = -e.movementX * 0.0003;
                 this.sway.y = e.movementY * 0.0003;
             }
@@ -114,7 +111,7 @@ export class Player {
             if(e.code === 'KeyZ') this.moveState.prone = !this.moveState.prone;
             if(e.code === 'KeyC') this.moveState.crouch = !this.moveState.crouch;
         });
-        document.addEventListener('keyup', (e) => this.onKey(code, false));
+        document.addEventListener('keyup', (e) => this.onKey(e.code, false));
         
         document.addEventListener('mousedown', (e) => {
             if (document.pointerLockElement === this.domElement) {
@@ -208,7 +205,7 @@ export class Player {
 
     takeDamage(amount) {
         this.health -= amount;
-        this.suppress(0.3); // Getting hit causes major suppression
+        this.suppress(0.3); 
         if (this.health <= 0) {
             this.health = 0;
             this.body.position.set(-50, 5, -5);
@@ -248,9 +245,20 @@ export class Player {
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
         const intersects = raycaster.intersectObjects(this.scene.children, true);
+        
         if (intersects.length > 0) {
             const hit = intersects[0];
             const hitBody = this.findPhysicsBody(hit.object);
+            
+            // --- NEW: VISUAL IMPACT FEEDBACK ---
+            if (hit.object.name !== 'minimap') {
+                const isDirt = hit.object.name === 'terrain' || hit.object.geometry?.type === 'PlaneGeometry';
+                VFX.createImpactVFX(this.scene, hit.point, hit.face.normal, isDirt ? 'dirt' : 'concrete');
+                if (!hitBody || !hitBody.onHit) {
+                    VFX.createBulletHole(this.scene, hit);
+                }
+            }
+
             if (hitBody && hitBody.onHit) {
                 hitBody.onHit(weapon.damage);
                 const isKill = (hitBody.health !== undefined && hitBody.health <= 0) || hitBody.isDead;
@@ -289,7 +297,6 @@ export class Player {
             }
         }
 
-        // SUPPRESSION DECAY
         this.suppression = Math.max(0, this.suppression - delta * 0.5);
         if (this.suppressionOverlay) {
             if (this.suppression > 0.1) {
@@ -305,7 +312,6 @@ export class Player {
             if (g.isExploded) this.grenadeList.splice(i, 1);
         });
 
-        // STANCE
         let targetHeight = 0.7; 
         let speedMult = 1.0;
         if (this.moveState.prone) {
@@ -318,7 +324,6 @@ export class Player {
         }
         this.currentHeight = THREE.MathUtils.lerp(this.currentHeight, targetHeight, 0.1);
 
-        // LEANING
         let targetLeanAngle = 0;
         let targetLeanOffset = 0;
         if (this.moveState.leanLeft) { targetLeanAngle = 0.2; targetLeanOffset = -0.4; }
@@ -329,13 +334,10 @@ export class Player {
         const targetAdsFactor = this.moveState.ads ? 1.0 : 0;
         this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
 
-        // --- CAMERA ROTATION (PROPER FPS) ---
-        // Apply suppression shake
         const shakeX = (Math.random() - 0.5) * this.suppression * 0.05;
         const shakeY = (Math.random() - 0.5) * this.suppression * 0.05;
         this.camera.rotation.set(this.pitch + shakeY, this.yaw + shakeX, this.leanAngle);
 
-        // MOVEMENT
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
         forward.y = 0; forward.normalize();
         const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -365,7 +367,6 @@ export class Player {
             this.canJump = false;
         }
 
-        // SWAY & BOB
         this.sway.lerp(new THREE.Vector3(0,0,0), 0.1); 
         if (currentSpeed > 0 && !this.moveState.jump) {
             this.bobTimer += delta * currentSpeed * 1.2;
@@ -376,7 +377,6 @@ export class Player {
         const bobOffset = Math.sin(this.bobTimer) * (currentSpeed > 0 ? 0.04 : 0.01) * (1 - this.adsFactor * 0.8);
         const bobSide = Math.cos(this.bobTimer * 0.5) * (currentSpeed > 0 ? 0.02 : 0) * (1 - this.adsFactor * 0.8);
 
-        // Increase sway intensity with suppression
         const suppressionSway = Math.sin(Date.now() * 0.005) * this.suppression * 0.1;
         const hipPos = new THREE.Vector3(0.3 + this.sway.x + bobSide + suppressionSway, -0.3 + this.sway.y + Math.abs(bobOffset), -0.5);
         const adsPos = new THREE.Vector3(0 + this.sway.x * 0.1 + suppressionSway * 0.2, -0.12 + this.sway.y * 0.1, -0.3);
@@ -395,7 +395,6 @@ export class Player {
             this.camera.updateProjectionMatrix();
         }
 
-        // Position Camera
         this.camera.position.x = this.body.position.x;
         this.camera.position.y = this.body.position.y + this.currentHeight + bobOffset;
         this.camera.position.z = this.body.position.z;
