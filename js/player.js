@@ -15,24 +15,37 @@ export class Player {
         this.walkSpeed = 8;
         this.canJump = true;
         this.health = 100;
-        this.ammo = 30;
         this.enabled = true;
         
         this.moveState = {
-            forward: false,
-            backward: false,
-            left: false,
-            right: false,
-            jump: false,
-            shoot: false
+            forward: false, backward: false, left: false, right: false,
+            jump: false, shoot: false
         };
 
-        this.fireRate = 0.6; 
+        // --- 6.1 WEAPON VARIETY ---
+        this.weapons = [
+            { 
+                name: 'Kar98k', type: 'bolt', damage: 150, fireRate: 1.2, 
+                capacity: 5, ammo: 5, reserve: 25, muzzleVel: 1.5,
+                color: 0x4d2a15, length: 0.9, auto: false
+            },
+            { 
+                name: 'M1 Garand', type: 'semi', damage: 60, fireRate: 0.3, 
+                capacity: 8, ammo: 8, reserve: 40, muzzleVel: 1.3,
+                color: 0x5c4033, length: 0.8, auto: false
+            },
+            { 
+                name: 'MP40', type: 'auto', damage: 25, fireRate: 0.1, 
+                capacity: 32, ammo: 32, reserve: 128, muzzleVel: 0.8,
+                color: 0x111111, length: 0.6, auto: true
+            }
+        ];
+        this.currentWeaponIndex = 0;
         this.fireTimer = 0;
 
         this.initPhysics();
         this.initControls();
-        this.initWeapon();
+        this.initWeaponVisuals();
     }
 
     initPhysics() {
@@ -64,7 +77,13 @@ export class Player {
                 this.camera.quaternion.setFromEuler(this.euler);
             }
         });
-        document.addEventListener('keydown', (e) => this.onKey(e.code, true));
+        document.addEventListener('keydown', (e) => {
+            this.onKey(e.code, true);
+            // Weapon switching keys
+            if(e.code === 'Digit1') this.switchWeapon(0);
+            if(e.code === 'Digit2') this.switchWeapon(1);
+            if(e.code === 'Digit3') this.switchWeapon(2);
+        });
         document.addEventListener('keyup', (e) => this.onKey(e.code, false));
         document.addEventListener('mousedown', (e) => {
             if (document.pointerLockElement === this.domElement && e.button === 0) this.moveState.shoot = true;
@@ -72,6 +91,15 @@ export class Player {
         document.addEventListener('mouseup', (e) => {
             if (document.pointerLockElement === this.domElement && e.button === 0) this.moveState.shoot = false;
         });
+    }
+
+    switchWeapon(index) {
+        if (index >= 0 && index < this.weapons.length && index !== this.currentWeaponIndex) {
+            this.currentWeaponIndex = index;
+            this.fireTimer = 0;
+            if(this.audio) this.audio.play('ui_click');
+            this.initWeaponVisuals(); // Re-build visuals
+        }
     }
 
     onKey(code, isPressed) {
@@ -85,22 +113,28 @@ export class Player {
         }
     }
 
-    initWeapon() {
+    initWeaponVisuals() {
+        if(this.gunGroup) this.camera.remove(this.gunGroup);
+        
+        const weapon = this.weapons[this.currentWeaponIndex];
         this.gunGroup = new THREE.Group();
+        
         const metalMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.8, roughness: 0.2 });
-        const woodMat = new THREE.MeshStandardMaterial({ color: 0x4d2a15, roughness: 0.9 });
-        const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, 0.6), metalMat);
+        const stockMat = new THREE.MeshStandardMaterial({ color: weapon.color, roughness: 0.9 });
+        
+        const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, 0.5), metalMat);
         this.gunGroup.add(receiver);
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5), metalMat);
-        barrel.rotateX(Math.PI / 2); barrel.position.set(0, 0, -0.45);
+        
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, weapon.length), metalMat);
+        barrel.rotateX(Math.PI / 2); barrel.position.set(0, 0, -weapon.length/2);
         this.gunGroup.add(barrel);
-        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.4), woodMat);
-        stock.position.set(0, -0.05, 0.4);
+        
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.4), stockMat);
+        stock.position.set(0, -0.05, 0.3);
         this.gunGroup.add(stock);
         
-        // Muzzle position helper
         this.muzzle = new THREE.Object3D();
-        this.muzzle.position.set(0, 0, -0.7);
+        this.muzzle.position.set(0, 0, -weapon.length);
         this.gunGroup.add(this.muzzle);
 
         this.gunGroup.position.set(0.3, -0.3, -0.5);
@@ -122,18 +156,22 @@ export class Player {
     }
 
     shoot() {
-        if (this.ammo <= 0) { 
-            if(this.audio) this.audio.play('ui_click');
+        const weapon = this.weapons[this.currentWeaponIndex];
+        if (weapon.ammo <= 0) { 
+            if(this.audio) this.audio.play('ui_click'); 
             return; 
         }
-        this.ammo--;
+        weapon.ammo--;
 
+        // --- AUDIO ---
         if(this.audio) {
             this.audio.play('rifle_fire', { randomPitch: true });
-            setTimeout(() => { this.audio.play('rifle_cycle'); }, 250);
+            if (weapon.type === 'bolt') {
+                setTimeout(() => { this.audio.play('rifle_cycle'); }, 400);
+            }
         }
 
-        // --- VFX: MUZZLE FLASH ---
+        // --- VFX ---
         if(this.particles) {
             const muzzleWorldPos = new THREE.Vector3();
             this.muzzle.getWorldPosition(muzzleWorldPos);
@@ -141,6 +179,7 @@ export class Player {
             this.particles.createMuzzleFlash(muzzleWorldPos, dir, false);
         }
 
+        // Recoil
         this.gunGroup.position.z += 0.05;
         setTimeout(() => this.gunGroup.position.z -= 0.05, 50);
 
@@ -150,7 +189,7 @@ export class Player {
         if (intersects.length > 0) {
             const hit = intersects[0];
             const hitBody = this.findPhysicsBody(hit.object);
-            if (hitBody && hitBody.onHit) hitBody.onHit(15);
+            if (hitBody && hitBody.onHit) hitBody.onHit(weapon.damage);
         }
     }
 
@@ -171,14 +210,17 @@ export class Player {
         }
         if (this.gunGroup) this.gunGroup.visible = true;
 
+        const weapon = this.weapons[this.currentWeaponIndex];
+
         if (this.moveState.shoot) {
             this.fireTimer += delta;
-            if (this.fireTimer >= this.fireRate) {
+            if (this.fireTimer >= weapon.fireRate) {
                 this.shoot();
                 this.fireTimer = 0;
             }
         } else {
-            this.fireTimer = this.fireRate;
+            // Allow instant first shot for semi/bolt
+            if(!weapon.auto) this.fireTimer = weapon.fireRate;
         }
 
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
