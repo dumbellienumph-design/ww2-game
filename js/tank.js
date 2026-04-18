@@ -25,7 +25,28 @@ export class Tank {
 
         this.initAimingReticle();
         
+        // --- 5.1 DAMAGE & DEGRADATION ---
+        this.maxHealth = 200;
+        this.health = 200;
+        this.maxFuel = 100;
+        this.fuel = 100;
+        this.ammo = 40;
+        this.isDestroyed = false;
+        
         this.exhaustTimer = 0;
+        this.damageTimer = 0;
+
+        this.body.onHit = (damage) => this.takeDamage(damage);
+    }
+
+    takeDamage(amount) {
+        if(this.isDestroyed) return;
+        this.health -= amount;
+        if(this.health <= 0) {
+            this.health = 0;
+            this.isDestroyed = true;
+            VFX.createExplosion(this.scene, this.world, this.group.position, 15, 100, this.audio);
+        }
     }
 
     initMinimapIcon() {
@@ -103,7 +124,6 @@ export class Tank {
         brake.position.z = -5.8;
         this.barrelGroup.add(brake);
 
-        // Exhaust Ports for Smoke
         this.exhaustL = new THREE.Object3D(); this.exhaustL.position.set(-0.8, 1.0 + vOffset, 3.8); this.group.add(this.exhaustL);
         this.exhaustR = new THREE.Object3D(); this.exhaustR.position.set(0.8, 1.0 + vOffset, 3.8); this.group.add(this.exhaustR);
 
@@ -116,6 +136,17 @@ export class Tank {
     }
 
     update(delta, controls, camera) {
+        if(this.isDestroyed) {
+            this.body.velocity.set(0, 0, 0);
+            this.body.angularVelocity.set(0, 0, 0);
+            if(this.particles) {
+                const worldPos = new THREE.Vector3(); this.turretGroup.getWorldPosition(worldPos);
+                this.particles.createFire(worldPos);
+                this.particles.createExhaustSmoke(worldPos, new THREE.Vector3(0, 2, 0), true);
+            }
+            return;
+        }
+
         if (!this.isOccupied) {
             if(this.reticle) this.reticle.visible = false;
             if(this.audio) this.audio.stop('tank_engine');
@@ -124,17 +155,24 @@ export class Tank {
 
         const speed = this.body.velocity.length();
 
-        // --- VFX: EXHAUST SMOKE ---
-        this.exhaustTimer += delta;
-        if (this.exhaustTimer > 0.1) {
+        // --- FUEL DEGRADATION ---
+        if(speed > 1) this.fuel -= delta * 0.1; // Thirsty Tiger
+        if(this.fuel <= 0) { this.fuel = 0; controls.forward = false; controls.backward = false; }
+
+        // --- VISUAL DAMAGE STATES ---
+        this.damageTimer += delta;
+        if (this.damageTimer > 0.2) {
             const worldPosL = new THREE.Vector3(); this.exhaustL.getWorldPosition(worldPosL);
             const worldPosR = new THREE.Vector3(); this.exhaustR.getWorldPosition(worldPosR);
             const smokeVel = new THREE.Vector3(0, 1, 2).applyQuaternion(this.group.quaternion);
+            
             if(this.particles) {
-                this.particles.createExhaustSmoke(worldPosL, smokeVel);
-                this.particles.createExhaustSmoke(worldPosR, smokeVel);
+                if(this.health < 100) this.particles.createExhaustSmoke(worldPosL, smokeVel, true);
+                else this.particles.createExhaustSmoke(worldPosL, smokeVel, false);
+                
+                if(this.health < 50) this.particles.createFire(worldPosR);
             }
-            this.exhaustTimer = 0;
+            this.damageTimer = 0;
         }
 
         if (this.audio) {
@@ -145,8 +183,8 @@ export class Tank {
 
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
         let targetSpeed = 0;
-        if (controls.forward) targetSpeed = 15;
-        else if (controls.backward) targetSpeed = -10;
+        if (controls.forward && this.fuel > 0) targetSpeed = 15;
+        else if (controls.backward && this.fuel > 0) targetSpeed = -10;
 
         const currentY = this.body.velocity.y;
         this.body.velocity.x = forward.x * targetSpeed;
@@ -194,16 +232,15 @@ export class Tank {
             this.reticle.material.color.setHex(isAimed ? 0x00ff00 : 0xff0000);
         }
 
-        if (controls.shoot) {
+        if (controls.shoot && this.ammo > 0) {
             this.fire();
             controls.shoot = false;
         }
     }
 
     fire() {
+        this.ammo--;
         if(this.audio) this.audio.play('tank_fire');
-
-        // --- VFX: MUZZLE FLASH ---
         const tip = new THREE.Vector3(0, 0, -6.5).applyMatrix4(this.barrelGroup.matrixWorld);
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.barrelGroup.getWorldQuaternion(new THREE.Quaternion()));
         if(this.particles) this.particles.createMuzzleFlash(tip, dir, true);

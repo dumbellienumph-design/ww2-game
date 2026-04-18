@@ -16,7 +16,8 @@ export class ParticleSystem {
             decay = 0.98,
             gravity = 0,
             opacity = 1.0,
-            count = 1
+            count = 1,
+            blending = THREE.AdditiveBlending
         } = options;
 
         for (let i = 0; i < count; i++) {
@@ -26,7 +27,7 @@ export class ParticleSystem {
                 transparent: true,
                 opacity: opacity,
                 depthWrite: false,
-                blending: THREE.AdditiveBlending,
+                blending: blending,
                 side: THREE.DoubleSide
             });
             const mesh = new THREE.Mesh(geo, mat);
@@ -90,15 +91,37 @@ export class ParticleSystem {
         }
     }
 
-    createExhaustSmoke(position, velocity) {
+    createExhaustSmoke(position, velocity, isHeavy = false) {
         this.createEmitter({
             position: position,
             velocity: velocity.clone().add(new THREE.Vector3(0, 2, 0)),
-            color: 0x333333,
-            size: 0.5,
-            life: 0.8,
+            color: isHeavy ? 0x111111 : 0x333333,
+            size: isHeavy ? 1.2 : 0.5,
+            life: isHeavy ? 1.5 : 0.8,
             decay: 0.97,
-            opacity: 0.3,
+            opacity: isHeavy ? 0.6 : 0.3,
+            count: isHeavy ? 3 : 1,
+            blending: THREE.NormalBlending
+        });
+    }
+
+    createFire(position) {
+        this.createEmitter({
+            position: position,
+            velocity: new THREE.Vector3(0, 4, 0),
+            color: 0xff4400,
+            size: 1.5,
+            life: 0.6,
+            decay: 0.98,
+            count: 2
+        });
+        this.createEmitter({
+            position: position,
+            velocity: new THREE.Vector3(0, 5, 0),
+            color: 0xffaa00,
+            size: 0.8,
+            life: 0.4,
+            decay: 0.95,
             count: 1
         });
     }
@@ -113,7 +136,8 @@ export class ParticleSystem {
             decay: 0.96,
             gravity: 15,
             opacity: 1.0,
-            count: count
+            count: count,
+            blending: THREE.NormalBlending
         });
     }
 

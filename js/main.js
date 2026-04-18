@@ -36,8 +36,6 @@ class Game {
         this.initPhysicsMaterial();
         this.terrain = new Terrain(this.scene, this.world);
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
-        
-        // --- PARTICLE SYSTEM ---
         this.particles = new ParticleSystem(this.scene);
 
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
@@ -47,7 +45,7 @@ class Game {
         this.player.audio = this.audio;
         this.initAudio();
 
-        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio);
+        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
 
         this.tanks = [
             new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
@@ -105,11 +103,6 @@ class Game {
         this.sunLight.position.set(100, 150, 50);
         this.sunLight.castShadow = true;
         this.sunLight.shadow.mapSize.set(2048, 2048);
-        this.sunLight.shadow.camera.near = 0.5;
-        this.sunLight.shadow.camera.far = 500;
-        const d = 150;
-        this.sunLight.shadow.camera.left = -d; this.sunLight.shadow.camera.right = d;
-        this.sunLight.shadow.camera.top = d; this.sunLight.shadow.camera.bottom = -d;
         this.scene.add(this.sunLight);
     }
 
@@ -118,7 +111,6 @@ class Game {
         const sunX = Math.cos(this.timeOfDay) * 200;
         const sunY = Math.sin(this.timeOfDay) * 200;
         this.sunLight.position.set(sunX, sunY, 50);
-        const isDay = sunY > 0;
         const dayFactor = Math.max(0, Math.min(1, sunY / 50));
         this.sunLight.intensity = dayFactor * 0.8;
         this.ambientLight.intensity = 0.1 + (dayFactor * 0.3);
@@ -127,14 +119,6 @@ class Game {
         const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
         this.scene.background = currentColor;
         this.scene.fog.color = currentColor;
-        if (this.base) {
-            this.base.group.traverse(obj => {
-                if (obj.name === 'searchlight_beam') {
-                    obj.visible = !isDay || dayFactor < 0.3;
-                    obj.material.opacity = (1 - dayFactor) * 0.4;
-                }
-            });
-        }
     }
 
     initPhysicsMaterial() {
@@ -176,6 +160,7 @@ class Game {
         this.minimapCamera.up.set(0, 0, -1);
         this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
         this.playerIcon.rotation.x = -Math.PI / 2; this.playerIcon.layers.set(1); this.scene.add(this.playerIcon);
+        
         this.compassLabels = {};
         ['N', 'S', 'E', 'W'].forEach(label => {
             const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
@@ -255,6 +240,7 @@ class Game {
         this.audio.updateAltitudeEffects(currentY);
 
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
+        
         if (this.activeVehicle) {
             this.activeVehicle.update(delta, this.player.moveState, this.player.camera);
             const targetPos = new THREE.Vector3();
@@ -272,6 +258,15 @@ class Game {
                 this.player.camera.lookAt(lookAtPos);
             }
             this.player.body.position.copy(this.activeVehicle.body.position);
+
+            // --- REPAIR/REFUEL LOGIC (Near BAKER point) ---
+            const baker = this.objectives.find(o => o.name === 'BAKER');
+            if(this.activeVehicle.body.position.distanceTo(baker.position) < 20) {
+                this.activeVehicle.health = Math.min(this.activeVehicle.maxHealth, this.activeVehicle.health + delta * 20);
+                this.activeVehicle.fuel = Math.min(this.activeVehicle.maxFuel, this.activeVehicle.fuel + delta * 10);
+                this.activeVehicle.ammo = Math.min(500, this.activeVehicle.ammo + 1);
+            }
+
         } else { this.player.update(delta, this.terrain); }
 
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
@@ -281,8 +276,14 @@ class Game {
             if (enemy.isDead && enemy.minimapIcon) { this.scene.remove(enemy.minimapIcon); enemy.minimapIcon = null; }
         });
 
+        // --- HUD: ENHANCED FOR VEHICLE STATS ---
         document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
-        document.getElementById('ammo').innerText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
+        let ammoText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
+        if (this.activeVehicle) {
+            ammoText += ` | VEHICLE: HP ${Math.ceil(this.activeVehicle.health)} FUEL ${Math.ceil(this.activeVehicle.fuel)}% AMMO ${this.activeVehicle.ammo}`;
+        }
+        document.getElementById('ammo').innerText = ammoText;
+        
         this.playerIcon.position.set(playerPos.x, 101, playerPos.z);
         const camEuler = new THREE.Euler().setFromQuaternion(this.player.camera.quaternion, 'YXZ');
         this.playerIcon.rotation.z = camEuler.y;

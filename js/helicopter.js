@@ -16,10 +16,30 @@ export class Helicopter {
         this.initVisuals();
         
         this.isOccupied = false;
-        this.enginePower = 0;
         this.rotorRotation = 0;
         this.fireTimer = 0;
         this.fireRate = 0.15;
+
+        // --- 5.1 DAMAGE & DEGRADATION ---
+        this.maxHealth = 100;
+        this.health = 100;
+        this.maxFuel = 100;
+        this.fuel = 100;
+        this.ammo = 500;
+        this.isDestroyed = false;
+        this.damageTimer = 0;
+
+        this.body.onHit = (damage) => this.takeDamage(damage);
+    }
+
+    takeDamage(amount) {
+        if(this.isDestroyed) return;
+        this.health -= amount;
+        if(this.health <= 0) {
+            this.health = 0;
+            this.isDestroyed = true;
+            VFX.createExplosion(this.scene, this.world, this.group.position, 10, 50, this.audio);
+        }
     }
 
     initPhysics(position) {
@@ -71,6 +91,15 @@ export class Helicopter {
     }
 
     update(delta, controls, camera) {
+        if(this.isDestroyed) {
+            this.body.velocity.y -= 9.82 * delta; // Crash to ground
+            if(this.particles) {
+                this.particles.createFire(this.group.position);
+                this.particles.createExhaustSmoke(this.group.position, new THREE.Vector3(0, 2, 0), true);
+            }
+            return;
+        }
+
         const targetRotorSpeed = this.isOccupied ? 20 : 0;
         this.rotorRotation += targetRotorSpeed * delta * 5;
         this.rotorGroup.rotation.y = this.rotorRotation;
@@ -80,6 +109,20 @@ export class Helicopter {
             this.body.angularDamping = 0.99;
             if(this.audio) this.audio.stop('heli_engine');
             return;
+        }
+
+        // --- FUEL DEGRADATION ---
+        this.fuel -= delta * 0.2;
+        if(this.fuel <= 0) { this.fuel = 0; }
+
+        // --- VISUAL DAMAGE STATES ---
+        this.damageTimer += delta;
+        if (this.damageTimer > 0.2 && this.health < 60) {
+            if(this.particles) {
+                this.particles.createExhaustSmoke(this.group.position, new THREE.Vector3(0, 2, 0), true);
+                if(this.health < 30) this.particles.createFire(this.group.position);
+            }
+            this.damageTimer = 0;
         }
 
         if (this.audio) {
@@ -94,9 +137,9 @@ export class Helicopter {
         const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.group.quaternion);
 
         const upForce = 9.82 * this.body.mass;
-        let liftFactor = 1.0;
-        if (controls.jump) liftFactor = 1.6;
-        if (controls.crouch) liftFactor = 0.4;
+        let liftFactor = (this.fuel > 0) ? 1.0 : 0;
+        if (controls.jump && this.fuel > 0) liftFactor = 1.6;
+        if (controls.crouch && this.fuel > 0) liftFactor = 0.4;
         
         const liftForce = up.clone().multiplyScalar(upForce * liftFactor);
         this.body.applyForce(new CANNON.Vec3(liftForce.x, liftForce.y, liftForce.z), this.body.position);
@@ -115,21 +158,18 @@ export class Helicopter {
         this.body.applyTorque(new CANNON.Vec3(0, yawError * 20000, 0));
 
         this.fireTimer += delta;
-        if (controls.shoot && this.fireTimer >= this.fireRate) {
+        if (controls.shoot && this.fireTimer >= this.fireRate && this.ammo > 0) {
             this.fire();
             this.fireTimer = 0;
         }
     }
 
     fire() {
+        this.ammo--;
         if(this.audio) this.audio.play('heli_fire');
-
         const tip = this.group.position.clone().add(new THREE.Vector3(0, -0.5, -3).applyQuaternion(this.group.quaternion));
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
-
-        // --- VFX: MUZZLE FLASH ---
         if(this.particles) this.particles.createMuzzleFlash(tip, dir, false);
-
         const bulletMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
         this.scene.add(bulletMesh);
         const bulletBody = new CANNON.Body({
