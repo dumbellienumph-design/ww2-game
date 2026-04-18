@@ -35,7 +35,6 @@ class Game {
         this.initLights();
         this.initPhysicsMaterial();
 
-        // Initial camera for the menu/loading
         this.tempCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.tempCamera.position.set(0, 50, 100);
         this.tempCamera.lookAt(0, 0, 0);
@@ -53,53 +52,64 @@ class Game {
     async loadGame() {
         const loadingBar = document.getElementById('loading-bar');
         const loadingStatus = document.getElementById('loading-status');
+        
+        let currentProgress = 0;
         const updateProgress = (percent, status) => {
-            loadingBar.style.width = `${percent}%`;
+            currentProgress = Math.max(currentProgress, percent);
+            loadingBar.style.width = `${currentProgress}%`;
             if (status) {
                 loadingStatus.classList.remove('typewriter');
-                void loadingStatus.offsetWidth; // Trigger reflow
+                void loadingStatus.offsetWidth; 
                 loadingStatus.innerText = status;
                 loadingStatus.classList.add('typewriter');
             }
         };
 
-        updateProgress(5, "MAPPING THEATER OF OPERATIONS...");
+        // Helper for smooth fake progress between steps
+        const fakeProgress = (target, duration, status) => {
+            return new Promise(resolve => {
+                const start = currentProgress;
+                const startTime = performance.now();
+                const animate = (now) => {
+                    const elapsed = now - startTime;
+                    const p = Math.min(elapsed / duration, 1);
+                    updateProgress(start + (target - start) * p, status);
+                    if (p < 1) requestAnimationFrame(animate);
+                    else resolve();
+                };
+                requestAnimationFrame(animate);
+            });
+        };
+
+        await fakeProgress(10, 800, "MAPPING THEATER OF OPERATIONS...");
         this.terrain = new Terrain(this.scene, this.world);
         
-        updateProgress(15, "STRATEGIC VEGETATION PLACEMENT...");
+        await fakeProgress(20, 600, "STRATEGIC VEGETATION PLACEMENT...");
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         
-        updateProgress(25, "CALIBRATING BALLISTIC PARTICLES...");
+        await fakeProgress(30, 500, "CALIBRATING BALLISTIC PARTICLES...");
         this.particles = new ParticleSystem(this.scene);
 
-        updateProgress(35, "PROVISIONING INFANTRY EQUIPMENT...");
+        await fakeProgress(40, 700, "PROVISIONING INFANTRY EQUIPMENT...");
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
         this.player.body.position.set(-50, 5, -50); 
         this.player.audio = this.audio;
-        
-        // Transfer audio listener to player camera
         this.audio.listener.parent.remove(this.audio.listener);
         this.player.camera.add(this.audio.listener);
 
         updateProgress(45, "ESTABLISHING SIGNAL FREQUENCIES...");
         let loadedSounds = 0;
         const totalSounds = 17;
-
         await this.initAudio((name) => {
             loadedSounds++;
-            const audioProgress = 45 + (loadedSounds / totalSounds) * 40;
+            const audioProgress = 45 + (loadedSounds / totalSounds) * 35; // 45% to 80%
             updateProgress(audioProgress, `UPLOADING FREQUENCY: ${name.replace('_', ' ').toUpperCase()}...`);
-            
-            // Start action theme as soon as it's loaded
-            if (name === 'action_theme') {
-                this.audio.play('action_theme');
-            }
         });
 
-        updateProgress(85, "FORTIFYING FORWARD OPERATING BASE...");
+        await fakeProgress(85, 600, "FORTIFYING FORWARD OPERATING BASE...");
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
 
-        updateProgress(90, "MOBILIZING ARMORED DIVISIONS...");
+        await fakeProgress(92, 800, "MOBILIZING ARMORED DIVISIONS...");
         this.tanks = [
             new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
             new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio, this.particles), 
@@ -107,7 +117,7 @@ class Game {
         ];
         this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
         
-        updateProgress(95, "POSITIONING STRIKE TEAMS...");
+        await fakeProgress(98, 500, "POSITIONING STRIKE TEAMS...");
         this.enemies = [];
         this.allies = [];
         this.spawnEnemies(12);
@@ -123,11 +133,12 @@ class Game {
         this.enemyTickets = 500;
         this.isGameOver = false;
         this.activeVehicle = null;
-
         this.initMinimap();
         
+        // Final transition
+        await fakeProgress(100, 1000, "OPERATION COMMENCING. GOOD LUCK.");
+
         // Music transition
-        updateProgress(100, "ALL UNITS STANDBY. COMMENCING OPERATION...");
         this.audio.fadeSound('action_theme', 0, 3);
         this.audio.fadeSound('anthem', 0.5, 3);
         this.audio.play('ambient_wind');
@@ -137,7 +148,7 @@ class Game {
             document.getElementById('game-ui').classList.remove('hidden');
             try { this.player.requestPointerLock(); } catch (e) {}
             this.isLoaded = true;
-        }, 3000);
+        }, 1500);
     }
 
     async initAudio(onEach) {
@@ -175,7 +186,6 @@ class Game {
         this.sunLight.castShadow = true;
         this.sunLight.shadow.mapSize.set(2048, 2048);
         this.scene.add(this.sunLight);
-
         this.scene.fog = new THREE.FogExp2(0xd0e0e3, 0.002);
     }
 
@@ -255,10 +265,10 @@ class Game {
 
         initBtn.addEventListener('click', async () => {
             initBtn.disabled = true;
-            initBtn.innerText = "LOADING COMMAND...";
+            initBtn.innerText = "COMMAND LINKED";
             this.audio.startAudioContext();
             
-            // Pre-load action theme for home screen
+            // Pre-load and start menu music
             await this.audio.loadSound('action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6);
             this.audio.play('action_theme');
             
@@ -319,31 +329,24 @@ class Game {
     animate() {
         if (this.isGameOver) return;
         requestAnimationFrame(() => this.animate());
-        
         const delta = this.clock.getDelta();
-        
         if (!this.isLoaded) {
             this.renderer.render(this.scene, this.tempCamera);
             return;
         }
-
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
         this.updateEnvironment(delta);
         this.particles.update(delta, this.player.camera);
-
         this.objectives.forEach(obj => obj.update(delta, [this.player, ...this.allies], this.enemies));
         let alliedPoints = this.objectives.filter(o => o.owner === 'allied').length;
         let enemyPoints = this.objectives.filter(o => o.owner === 'enemy').length;
         if (enemyPoints > alliedPoints) this.alliedTickets -= (enemyPoints - alliedPoints) * delta * 2;
         if (alliedPoints > enemyPoints) this.enemyTickets -= (alliedPoints - enemyPoints) * delta * 2;
         if (this.alliedTickets <= 0 || this.enemyTickets <= 0) this.endGame();
-
         const currentY = this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y;
         this.audio.updateAltitudeEffects(currentY);
-
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
-        
         if (this.activeVehicle) {
             this.activeVehicle.update(delta, this.player.moveState, this.player.camera);
             const targetPos = new THREE.Vector3();
@@ -361,18 +364,14 @@ class Game {
                 this.player.camera.lookAt(lookAtPos);
             }
             this.player.body.position.copy(this.activeVehicle.body.position);
-
             const baker = this.objectives.find(o => o.name === 'BAKER');
             if(this.activeVehicle.body.position.distanceTo(baker.position) < 20) {
                 this.activeVehicle.health = Math.min(this.activeVehicle.maxHealth, this.activeVehicle.health + delta * 20);
                 this.activeVehicle.fuel = Math.min(this.activeVehicle.maxFuel, this.activeVehicle.fuel + delta * 10);
                 this.activeVehicle.ammo = Math.min(500, this.activeVehicle.ammo + 1);
             }
-
         } else { this.player.update(delta, this.terrain); }
-
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
-        
         this.allies.forEach(ally => {
             ally.update(delta, playerPos, this.enemies, this.objectives);
             if(ally.minimapIcon) {
@@ -380,13 +379,11 @@ class Game {
                 if(ally.isDead) this.scene.remove(ally.minimapIcon);
             }
         });
-
         this.enemies.forEach((enemy) => {
             enemy.update(delta, playerPos, this.player);
             if (enemy.minimapIcon) enemy.minimapIcon.position.set(enemy.body.position.x, 100, enemy.body.position.z);
             if (enemy.isDead && enemy.minimapIcon) { this.scene.remove(enemy.minimapIcon); enemy.minimapIcon = null; }
         });
-
         document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
         let ammoText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
         if (this.activeVehicle) {
@@ -396,7 +393,6 @@ class Game {
             ammoText += ` | AMMO: ${w.ammo}/${w.reserve} | GRENADES: ${this.player.grenades}`;
         }
         document.getElementById('ammo').innerText = ammoText;
-        
         this.playerIcon.position.set(playerPos.x, 101, playerPos.z);
         const camEuler = new THREE.Euler().setFromQuaternion(this.player.camera.quaternion, 'YXZ');
         this.playerIcon.rotation.z = camEuler.y;
@@ -408,7 +404,6 @@ class Game {
             if(l==='E') this.compassLabels[l].position.set(playerPos.x + dist, 150, playerPos.z);
             if(l==='W') this.compassLabels[l].position.set(playerPos.x - dist, 150, playerPos.z);
         });
-
         this.player.camera.layers.set(0); this.renderer.render(this.scene, this.player.camera);
         this.minimapCamera.layers.enable(0); this.minimapCamera.layers.enable(1);
         this.minimapRenderer.render(this.scene, this.minimapCamera);
