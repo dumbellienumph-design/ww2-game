@@ -38,21 +38,17 @@ class Game {
         this.isPlayerActive = false; 
         this.activeRadius = 200; 
 
-        // --- 1. INSTANT ENTRY ---
-        this.initWorld();
-        this.isLoaded = true; // Show world immediately
-        
-        this.initPointerLockListener();
-        
-        window.addEventListener('resize', () => this.onWindowResize());
-        this.clock = new THREE.Clock();
-        this.animate();
-    }
+        // State variables required for update loop
+        this.alliedTickets = 500;
+        this.enemyTickets = 500;
+        this.activeVehicle = null;
 
-    initPointerLockListener() {
-        // Any click on the document will lock the mouse for control
+        // --- 1. INSTANT WORLD INIT ---
+        this.initWorld();
+        
+        // Pointer Lock on click
         document.addEventListener('mousedown', () => {
-            if (this.isLoaded && !this.isGameOver && !document.pointerLockElement) {
+            if (!this.isGameOver && !document.pointerLockElement) {
                 try { this.player.requestPointerLock(); } catch (e) {}
             }
         });
@@ -61,9 +57,13 @@ class Game {
         if (btnResume) {
             btnResume.addEventListener('click', () => {
                 document.getElementById('esc-menu').classList.add('hidden');
-                if (this.isLoaded) this.player.requestPointerLock();
+                this.player.requestPointerLock();
             });
         }
+        
+        window.addEventListener('resize', () => this.onWindowResize());
+        this.clock = new THREE.Clock();
+        this.animate();
     }
 
     initWorld() {
@@ -161,7 +161,6 @@ class Game {
         this.sunLight.position.set(sunX, sunY, 50);
         const dayFactor = Math.max(0, Math.min(1, sunY / 50));
         this.sunLight.intensity = dayFactor * 0.8;
-        this.ambientLight.intensity = 0.1 + (dayFactor * 0.3);
         const dayColor = new THREE.Color(0x8899a6);
         const nightColor = new THREE.Color(0x050510);
         const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
@@ -170,7 +169,7 @@ class Game {
     }
 
     updateCulling() {
-        if (!this.player || !this.isLoaded) return;
+        if (!this.player) return;
         const playerPos = this.player.body.position;
 
         if (this.vegetation && this.vegetation.objects) {
@@ -196,17 +195,10 @@ class Game {
         requestAnimationFrame(() => this.animate());
         const delta = this.clock.getDelta();
 
-        if (!this.isLoaded) return;
-
-        if (!this.isPlayerActive) {
+        // Check if player has moved for the first time
+        if (this.player && !this.isPlayerActive) {
             const vel = this.player.body.velocity;
             if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true;
-        }
-
-        this.cullingTimer += delta;
-        if (this.cullingTimer > 0.5) { 
-            this.updateCulling();
-            this.cullingTimer = 0;
         }
 
         this.world.step(1/60, delta, 10);
