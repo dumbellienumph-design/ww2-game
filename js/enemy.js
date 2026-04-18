@@ -13,25 +13,27 @@ export class Enemy {
         this.health = 30;
         this.speed = 4;
         this.fireRate = 2.0;
-        this.shootDist = 40;
+        this.shootDist = 50;
 
         if (type === 'tank') {
             this.health = 250;
-            this.speed = 2.5;
+            this.speed = 3;
             this.fireRate = 5.0;
             this.shootDist = 120;
         } else if (type === 'aa_flak') {
             this.health = 100;
-            this.speed = 0; // Stationary
+            this.speed = 0; 
             this.fireRate = 4.0;
-            this.shootDist = 200; // Extreme range for AA
+            this.shootDist = 250;
         }
         
         this.isDead = false;
-        this.state = 'idle'; 
+        this.isCrouching = false;
+        this.state = 'patrol'; // patrol, chase, flank, cover, rush
         this.stateTimer = 0;
         this.targetPos = new THREE.Vector3();
         this.fireTimer = Math.random() * 2;
+        this.suppressionLevel = 0; // 0 to 1
 
         this.group = new THREE.Group();
         this.scene.add(this.group);
@@ -50,7 +52,8 @@ export class Enemy {
             mass: this.type === 'infantry' ? 80 : 15000,
             shape: shape,
             position: new CANNON.Vec3(position.x, position.y, position.z),
-            fixedRotation: this.type !== 'tank'
+            fixedRotation: this.type !== 'tank',
+            linearDamping: 0.5
         });
         this.world.addBody(this.body);
         this.body.mesh = this.group;
@@ -61,17 +64,18 @@ export class Enemy {
         const mat = new THREE.MeshStandardMaterial({ color: 0x4a4e4d }); // German Grey
 
         if (this.type === 'infantry') {
-            // Torso
+            this.visualGroup = new THREE.Group();
+            this.group.add(this.visualGroup);
+
             const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.3), mat);
             torso.position.y = 0.4;
-            this.group.add(torso);
-            // Stahlhelm
-            const helmet = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.2), new THREE.MeshStandardMaterial({color: 0x3d3535}));
+            this.visualGroup.add(torso);
+            const helmet = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.2), new THREE.MeshStandardMaterial({color: 0x333333}));
             helmet.position.y = 1.1;
-            this.group.add(helmet);
+            this.visualGroup.add(helmet);
             this.gun = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.9), new THREE.MeshStandardMaterial({color: 0x111111}));
             this.gun.position.set(0.3, 0.4, -0.4);
-            this.group.add(this.gun);
+            this.visualGroup.add(this.gun);
         } 
         else if (this.type === 'tank') {
             const hull = new THREE.Mesh(new THREE.BoxGeometry(5, 1.8, 8), mat);
@@ -84,22 +88,16 @@ export class Enemy {
             this.group.add(this.barrel);
         }
         else if (this.type === 'aa_flak') {
-            // Cruciform Carriage
             const base = new THREE.Mesh(new THREE.BoxGeometry(4, 0.3, 0.6), mat);
             this.group.add(base);
             const baseCross = base.clone(); baseCross.rotation.y = Math.PI/2;
             this.group.add(baseCross);
-            
-            // Turret & Shield
             this.turret = new THREE.Group();
             this.turret.position.y = 0.5;
             this.group.add(this.turret);
-            
             const shield = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2, 0.1), mat);
             shield.position.z = -0.5;
             this.turret.add(shield);
-            
-            // 8.8cm Barrel
             this.barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 6).rotateX(Math.PI/2), mat);
             this.barrel.position.set(0, 0.8, -2.5);
             this.turret.add(this.barrel);
@@ -108,10 +106,17 @@ export class Enemy {
 
     takeDamage(amount) {
         this.health -= amount;
+        // TACTICAL RESPONSE: Immediate Suppression/Cover on hit
+        if (this.type === 'infantry' && !this.isDead) {
+            this.suppressionLevel = 1.0;
+            this.state = 'cover';
+            this.stateTimer = 3;
+        }
+
         if (this.health <= 0 && !this.isDead) {
             this.isDead = true;
             this.state = 'dead';
-            this.group.rotation.x = -Math.PI / 2.2; // Fall over
+            this.group.rotation.x = -Math.PI / 2.2;
             this.body.mass = 0;
             this.body.type = CANNON.Body.STATIC;
             setTimeout(() => this.scene.remove(this.group), 10000);
@@ -124,43 +129,89 @@ export class Enemy {
         const currentPos = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
         const dist = currentPos.distanceTo(playerPosition);
 
+        // --- SUPPRESSION RECOVERY ---
+        this.suppressionLevel = Math.max(0, this.suppressionLevel - delta * 0.2);
+
         // --- AI STATE MACHINE ---
         this.stateTimer -= delta;
         if (this.stateTimer <= 0) {
-            if (this.type === 'aa_flak') {
-                this.state = dist < this.shootDist ? 'aim' : 'idle';
-            } else if (dist > 100) {
-                this.state = 'patrol';
-                this.targetPos.set(currentPos.x + (Math.random()-0.5)*50, 0, currentPos.z + (Math.random()-0.5)*50);
-            } else {
-                this.state = 'chase';
-            }
-            this.stateTimer = 3 + Math.random() * 5;
+            this.decideNextState(dist, playerPosition);
         }
 
-        // Movement & Aiming
-        if (this.type !== 'aa_flak') {
-            const moveDir = new THREE.Vector3();
-            if (this.state === 'chase') {
-                moveDir.subVectors(playerPosition, currentPos).normalize();
-            } else if (this.state === 'patrol') {
-                moveDir.subVectors(this.targetPos, currentPos).normalize();
-            }
-            this.body.velocity.x = moveDir.x * this.speed;
-            this.body.velocity.z = moveDir.z * this.speed;
-            this.group.lookAt(playerPosition.x, this.group.position.y, playerPosition.z);
-        } else {
-            // Flak specific aiming: Pitch and Yaw the turret
-            this.turret.lookAt(playerPosition.x, this.turret.position.y, playerPosition.z);
-        }
+        this.executeState(delta, playerPosition, dist, player);
 
         // Shooting
-        if (dist < this.shootDist) {
+        if (dist < this.shootDist && this.suppressionLevel < 0.8) {
             this.fireTimer += delta;
             if (this.fireTimer >= this.fireRate) {
                 this.shoot(player);
                 this.fireTimer = 0;
             }
+        }
+    }
+
+    decideNextState(dist, playerPos) {
+        if (this.type === 'aa_flak') {
+            this.state = dist < this.shootDist ? 'aim' : 'idle';
+            this.stateTimer = 5;
+            return;
+        }
+
+        // Infantry Tactics
+        if (this.suppressionLevel > 0.5) {
+            this.state = 'cover';
+            this.stateTimer = 2 + Math.random() * 2;
+        } else if (dist > 60) {
+            this.state = 'patrol';
+            this.targetPos.set(this.body.position.x + (Math.random()-0.5)*60, 0, this.body.position.z + (Math.random()-0.5)*60);
+            this.stateTimer = 5 + Math.random() * 5;
+        } else if (dist > 30) {
+            // FM 21-75: 3-5 Second Rush
+            this.state = 'rush';
+            this.stateTimer = 3 + Math.random() * 2;
+            this.targetPos.copy(playerPos);
+        } else {
+            this.state = 'flank';
+            this.stateTimer = 2 + Math.random() * 2;
+        }
+    }
+
+    executeState(delta, playerPos, dist, player) {
+        const moveDir = new THREE.Vector3();
+        this.isCrouching = false;
+
+        if (this.type !== 'aa_flak') {
+            if (this.state === 'patrol') {
+                moveDir.subVectors(this.targetPos, this.group.position).normalize();
+            } else if (this.state === 'rush') {
+                // High speed forward sprint
+                moveDir.subVectors(playerPos, this.group.position).normalize();
+                this.body.velocity.x = moveDir.x * (this.speed * 1.5);
+                this.body.velocity.z = moveDir.z * (this.speed * 1.5);
+            } else if (this.state === 'cover' || this.state === 'flank') {
+                // Tactical sidestep or crouch
+                const toPlayer = new THREE.Vector3().subVectors(playerPos, this.group.position).normalize();
+                moveDir.set(-toPlayer.z, 0, toPlayer.x); // Perpendicular
+                this.isCrouching = true;
+            } else {
+                moveDir.subVectors(playerPos, this.group.position).normalize();
+            }
+
+            if (this.state !== 'rush') {
+                this.body.velocity.x = moveDir.x * this.speed;
+                this.body.velocity.z = moveDir.z * this.speed;
+            }
+
+            this.group.lookAt(playerPos.x, this.group.position.y, playerPos.z);
+            
+            // Visual feedback for crouch/suppression
+            if (this.isCrouching && this.visualGroup) {
+                this.visualGroup.position.y = THREE.MathUtils.lerp(this.visualGroup.position.y, -0.4, 0.1);
+            } else if (this.visualGroup) {
+                this.visualGroup.position.y = THREE.MathUtils.lerp(this.visualGroup.position.y, 0, 0.1);
+            }
+        } else {
+            this.turret.lookAt(playerPos.x, this.turret.position.y, playerPos.z);
         }
     }
 
@@ -172,12 +223,10 @@ export class Enemy {
         else if (this.type === 'tank') this.barrel.getWorldPosition(startPos);
         else startPos.copy(this.group.position).add(new THREE.Vector3(0, 1.5, 0));
 
-        // FX & Damage
         if (this.type === 'infantry') {
             const dir = player.camera.position.clone().sub(startPos).normalize();
             this.spawnBullet(startPos, dir, player);
         } else {
-            // Heavy shells create explosions
             VFX.createExplosion(this.scene, this.world, player.camera.position, this.type === 'tank' ? 2 : 5, 20, this.audio);
         }
     }
@@ -190,11 +239,12 @@ export class Enemy {
         const anim = () => {
             if (Date.now() - startTime > 2000 || this.isDead) { this.scene.remove(bullet); return; }
             bullet.position.add(dir.clone().multiplyScalar(1.2));
-            if (bullet.position.distanceTo(player.camera.position) < 2 && !bullet.userData.whizzed) {
+            const distToPlayer = bullet.position.distanceTo(player.camera.position);
+            if (distToPlayer < 2 && !bullet.userData.whizzed) {
                 if (this.audio) this.audio.play('bullet_whiz');
                 bullet.userData.whizzed = true;
             }
-            if (bullet.position.distanceTo(player.camera.position) < 0.8) {
+            if (distToPlayer < 0.8) {
                 player.takeDamage(10);
                 VFX.createExplosion(this.scene, this.world, bullet.position.clone(), 1, 0, this.audio);
                 this.scene.remove(bullet);
