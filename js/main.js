@@ -55,19 +55,24 @@ class Game {
         const loadingStatus = document.getElementById('loading-status');
         const updateProgress = (percent, status) => {
             loadingBar.style.width = `${percent}%`;
-            if (status) loadingStatus.innerText = status;
+            if (status) {
+                loadingStatus.classList.remove('typewriter');
+                void loadingStatus.offsetWidth; // Trigger reflow
+                loadingStatus.innerText = status;
+                loadingStatus.classList.add('typewriter');
+            }
         };
 
-        updateProgress(5, "Surveying Terrain...");
+        updateProgress(5, "MAPPING THEATER OF OPERATIONS...");
         this.terrain = new Terrain(this.scene, this.world);
         
-        updateProgress(15, "Deploying Vegetation...");
+        updateProgress(15, "STRATEGIC VEGETATION PLACEMENT...");
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         
-        updateProgress(25, "Calibrating Particles...");
+        updateProgress(25, "CALIBRATING BALLISTIC PARTICLES...");
         this.particles = new ParticleSystem(this.scene);
 
-        updateProgress(35, "Arming Player...");
+        updateProgress(35, "PROVISIONING INFANTRY EQUIPMENT...");
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
         this.player.body.position.set(-50, 5, -50); 
         this.player.audio = this.audio;
@@ -76,14 +81,14 @@ class Game {
         this.audio.listener.parent.remove(this.audio.listener);
         this.player.camera.add(this.audio.listener);
 
-        updateProgress(45, "Loading Soundscapes...");
+        updateProgress(45, "ESTABLISHING SIGNAL FREQUENCIES...");
         let loadedSounds = 0;
         const totalSounds = 17;
 
         await this.initAudio((name) => {
             loadedSounds++;
             const audioProgress = 45 + (loadedSounds / totalSounds) * 40;
-            updateProgress(audioProgress, `Loading Audio: ${name}...`);
+            updateProgress(audioProgress, `UPLOADING FREQUENCY: ${name.replace('_', ' ').toUpperCase()}...`);
             
             // Start action theme as soon as it's loaded
             if (name === 'action_theme') {
@@ -91,10 +96,10 @@ class Game {
             }
         });
 
-        updateProgress(85, "Establishing Base...");
+        updateProgress(85, "FORTIFYING FORWARD OPERATING BASE...");
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
 
-        updateProgress(90, "Spawning Motorized Divisions...");
+        updateProgress(90, "MOBILIZING ARMORED DIVISIONS...");
         this.tanks = [
             new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
             new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio, this.particles), 
@@ -102,7 +107,7 @@ class Game {
         ];
         this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
         
-        updateProgress(95, "Infiltrating Enemy Lines...");
+        updateProgress(95, "POSITIONING STRIKE TEAMS...");
         this.enemies = [];
         this.allies = [];
         this.spawnEnemies(12);
@@ -122,7 +127,7 @@ class Game {
         this.initMinimap();
         
         // Music transition
-        updateProgress(100, "ALL UNITS READY. DEPLOYING...");
+        updateProgress(100, "ALL UNITS STANDBY. COMMENCING OPERATION...");
         this.audio.fadeSound('action_theme', 0, 3);
         this.audio.fadeSound('anthem', 0.5, 3);
         this.audio.play('ambient_wind');
