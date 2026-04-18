@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 export class Base {
-    constructor(scene, world, position, audio) {
+    constructor(scene, world, position, audio, particles) {
         this.scene = scene;
         this.world = world;
         this.position = position;
         this.audio = audio;
+        this.particles = particles;
         
         this.group = new THREE.Group();
         this.group.position.set(position.x, position.y, position.z);
@@ -61,44 +62,64 @@ export class Base {
         this.stoneMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 1.0 });
     }
 
-    createSignalCenter(x, y, z) {
-        const scGroup = new THREE.Group();
-        scGroup.position.set(x, y, z);
-        this.group.add(scGroup);
-
-        const bunker = new THREE.Mesh(new THREE.BoxGeometry(8, 4, 10), this.formworkConcreteMat);
-        bunker.position.set(-5, 2, 0);
-        scGroup.add(bunker);
-
-        // --- AUDIO: SIGNAL CENTER HUM ---
-        if(this.audio) {
-            this.audio.createPositionalSource('base_hum', bunker);
-            this.audio.play('base_hum');
+    createSupplyDepot() {
+        for(let i=0; i<20; i++) {
+            const rx = -15 + Math.random() * 30;
+            const rz = 25 + Math.random() * 30;
+            if (Math.random() > 0.4) this.createCrate(rx, 0, rz);
+            else this.createBarrel(rx, 0, rz);
         }
+    }
 
-        const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), this.metalMat);
-        door.position.set(-5, 1.1, 5.1);
-        scGroup.add(door);
+    createCrate(x, y, z) {
+        const s = 1.2 + Math.random() * 0.8;
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), this.woodMat);
+        crate.position.set(x, s/2, z);
+        crate.rotation.y = Math.random() * Math.PI;
+        this.group.add(crate);
 
-        const towerHeight = 25;
-        const towerGroup = new THREE.Group();
-        towerGroup.position.set(8, 0, 0);
-        scGroup.add(towerGroup);
-        const towerSkeleton = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 3, towerHeight, 4), this.steelLatticeMat);
-        towerSkeleton.position.y = towerHeight / 2;
-        towerGroup.add(towerSkeleton);
+        const body = new CANNON.Body({ mass: 100, shape: new CANNON.Box(new CANNON.Vec3(s/2, s/2, s/2)) });
+        body.position.set(this.position.x + x, this.position.y + s/2, this.position.z + z);
+        const quat = new CANNON.Quaternion();
+        quat.setFromEuler(0, crate.rotation.y, 0);
+        body.quaternion.copy(quat);
 
-        const trench = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 1), this.concreteMat);
-        trench.position.set(1, 0.1, 0);
-        scGroup.add(trench);
+        body.health = 50;
+        body.onHit = (damage) => {
+            body.health -= damage;
+            if (body.health <= 0) {
+                this.group.remove(crate);
+                this.world.removeBody(body);
+                if (this.particles) this.particles.createDebris(crate.getWorldPosition(new THREE.Vector3()), 0x4d2a15, 15);
+                if (this.audio) this.audio.play('ui_click');
+            }
+        };
 
-        const bunkerBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(4, 2, 5)) });
-        bunkerBody.position.set(this.position.x + x - 5, this.position.y + 2, this.position.z + z);
-        this.world.addBody(bunkerBody);
+        this.world.addBody(body);
+        body.mesh = crate; 
+    }
 
-        const towerBody = new CANNON.Body({ mass: 0, shape: new CANNON.Cylinder(3, 3, towerHeight, 8) });
-        towerBody.position.set(this.position.x + x + 8, this.position.y + towerHeight/2, this.position.z + z);
-        this.world.addBody(towerBody);
+    createBarrel(x, y, z) {
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.2, 12), this.metalMat);
+        barrel.position.set(x, 0.6, z);
+        this.group.add(barrel);
+
+        const body = new CANNON.Body({ mass: 50, shape: new CANNON.Cylinder(0.4, 0.4, 1.2, 8) });
+        body.position.set(this.position.x + x, this.position.y + 0.6, this.position.z + z);
+
+        body.health = 40;
+        body.onHit = (damage) => {
+            body.health -= damage;
+            if (body.health <= 0) {
+                this.group.remove(barrel);
+                this.world.removeBody(body);
+                if (this.particles) this.particles.createDebris(barrel.getWorldPosition(new THREE.Vector3()), 0x222222, 10);
+                if (this.audio) this.audio.play('explosion_debris');
+            }
+        };
+
+        this.world.addBody(body);
+        body.mesh = barrel;
     }
 
     createAirstrip() {
@@ -114,7 +135,6 @@ export class Base {
         this.createControlTower(25, 0, -40);
         this.createHangar(55, 0, 0);
     }
-
     createControlTower(x, y, z) {
         const towerGroup = new THREE.Group(); towerGroup.position.set(x, y, z); this.group.add(towerGroup);
         const base = new THREE.Mesh(new THREE.BoxGeometry(6, 12, 6), this.concreteMat); base.position.y = 6; towerGroup.add(base);
@@ -125,7 +145,6 @@ export class Base {
         body.addShape(new CANNON.Box(new CANNON.Vec3(4, 2, 4)), new CANNON.Vec3(0, 14, 0));
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createHangar(x, y, z) {
         const hangarGroup = new THREE.Group(); hangarGroup.position.set(x, y, z); this.group.add(hangarGroup);
         const hangarGeo = new THREE.CylinderGeometry(10, 10, 30, 12, 1, false, 0, Math.PI);
@@ -139,7 +158,6 @@ export class Base {
         }
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createCantonment() {
         const streetWidth = 10; const hutSpacingX = 12; const hutSpacingZ = 18;
         for(let row = 0; row < 2; row++) {
@@ -152,7 +170,6 @@ export class Base {
         const streetGeo = new THREE.PlaneGeometry(60, streetWidth); const street = new THREE.Mesh(streetGeo, this.dirtMat);
         street.rotation.x = -Math.PI/2; street.position.set(-40, 0.06, -7); this.group.add(street);
     }
-
     createQuonsetHut(x, y, z) {
         const hutGroup = new THREE.Group(); hutGroup.position.set(x, y, z); this.group.add(hutGroup);
         const radius = 3.5, length = 12;
@@ -173,7 +190,6 @@ export class Base {
         body.addShape(new CANNON.Box(new CANNON.Vec3(1, 0.15, 0.5)), new CANNON.Vec3(0, 0.15, -length/2 - 0.5));
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createWashhouse(x, y, z) {
         const washGroup = new THREE.Group(); washGroup.position.set(x, y, z); this.group.add(washGroup);
         const w = 5, l = 8, h = 3;
@@ -185,7 +201,6 @@ export class Base {
         body.addShape(new CANNON.Box(new CANNON.Vec3(w/2, h/2, l/2)), new CANNON.Vec3(0, h/2 + 0.2, 0));
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createFortifications() {
         const wallSize = 130; const gateOpening = 15;
         const bounds = [
@@ -204,7 +219,6 @@ export class Base {
         const cornerCoords = [[-65, -65], [65, -65], [-65, 65], [65, 65]];
         cornerCoords.forEach(c => this.createWatchTower(c[0], 0, c[1]));
     }
-
     createWatchTower(x, y, z) {
         const towerGroup = new THREE.Group(); towerGroup.position.set(x, y, z); this.group.add(towerGroup);
         const h = 14; 
@@ -231,7 +245,6 @@ export class Base {
         }
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createDoubleFence(x, z, length, rotation) {
         const fenceGroup = new THREE.Group(); fenceGroup.position.set(x, 0, z); fenceGroup.rotation.y = rotation; this.group.add(fenceGroup);
         const fenceDist = 3.0; const path = new THREE.Mesh(new THREE.PlaneGeometry(length, fenceDist + 1), this.dirtMat);
@@ -258,7 +271,6 @@ export class Base {
         const quat = new CANNON.Quaternion(); quat.setFromEuler(0, rotation, 0); body.quaternion.copy(quat);
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createMainGate(x, z) {
         const gateGroup = new THREE.Group(); gateGroup.position.set(x, 0, z); this.group.add(gateGroup);
         const gh = new THREE.Group(); gh.position.set(-6, 0, 0); gateGroup.add(gh);
@@ -272,18 +284,14 @@ export class Base {
         ghBody.position.set(this.position.x + x - 6, this.position.y + 1.5, this.position.z + z); this.world.addBody(ghBody);
         const armPivot = new THREE.Group(); armPivot.position.set(-3.5, 1.2, 0); gateGroup.add(armPivot);
         const pivotPost = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.5), this.darkGreenMat); pivotPost.position.y = -0.5; armPivot.add(pivotPost);
-        for(let i=0; i<10; i++) {
-            const seg = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.2, 0.2), i%2 === 0 ? this.stripeRedMat : this.stripeWhiteMat); seg.position.set(i + 0.5, 0, 0); armPivot.add(seg);
-        }
+        for(let i=0; i<10; i++) { const seg = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.2, 0.2), i%2 === 0 ? this.stripeRedMat : this.stripeWhiteMat); seg.position.set(i + 0.5, 0, 0); armPivot.add(seg); }
         armPivot.rotation.z = 0.1;
         const armBody = new CANNON.Body({ mass: 0 }); const armQuat = new CANNON.Quaternion(); armQuat.setFromEuler(0, 0, 0.1);
         armBody.addShape(new CANNON.Box(new CANNON.Vec3(5, 0.1, 0.1)), new CANNON.Vec3(1.5, 1.2 + 0.5, 0), armQuat);
         armBody.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(armBody);
         const sentry = new THREE.Group(); sentry.position.set(-10, 0, 3); gateGroup.add(sentry);
         const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.8, 1.2), this.whiteWoodMat); box.position.y = 1.4; sentry.add(box);
-        for(let i=0; i<8; i++) {
-            const stripe = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.2), this.blackMat); stripe.position.set(0, 0.4 + i*0.3, 0.61); stripe.rotation.z = Math.PI / 4; sentry.add(stripe);
-        }
+        for(let i=0; i<8; i++) { const stripe = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.2), this.blackMat); stripe.position.set(0, 0.4 + i*0.3, 0.61); stripe.rotation.z = Math.PI / 4; sentry.add(stripe); }
         const sBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.6, 1.4, 0.6)) });
         sBody.position.set(this.position.x + x - 10, this.position.y + 1.4, this.position.z + z + 3); this.world.addBody(sBody);
         const signGroup = new THREE.Group(); signGroup.position.set(4, 0, 0); gateGroup.add(signGroup);
@@ -297,7 +305,6 @@ export class Base {
         const signBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(1.5, 1.5, 0.1)) });
         signBody.position.set(this.position.x + x + 4, this.position.y + 1.5, this.position.z + z); this.world.addBody(signBody);
     }
-
     createHeadquarters(x, y, z) {
         const hqGroup = new THREE.Group(); hqGroup.position.set(x, y, z); this.group.add(hqGroup);
         const w = 12, l = 15, h = 7;
@@ -322,7 +329,6 @@ export class Base {
         body.addShape(new CANNON.Box(new CANNON.Vec3(2, 0.2, 1)), new CANNON.Vec3(0, 0.2, -l/2 - 1));
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createParadeGround(x, y, z) {
         const pgGroup = new THREE.Group(); pgGroup.position.set(x, y, z); this.group.add(pgGroup);
         const w = 40, l = 40;
@@ -338,7 +344,19 @@ export class Base {
             }
         }
     }
-
+    createSignalCenter(x, y, z) {
+        const scGroup = new THREE.Group(); scGroup.position.set(x, y, z); this.group.add(scGroup);
+        const bunker = new THREE.Mesh(new THREE.BoxGeometry(8, 4, 10), this.formworkConcreteMat); bunker.position.set(-5, 2, 0); scGroup.add(bunker);
+        if(this.audio) { this.audio.createPositionalSource('base_hum', bunker); this.audio.play('base_hum'); }
+        const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), this.metalMat); door.position.set(-5, 1.1, 5.1); scGroup.add(door);
+        const towerHeight = 25; const towerGroup = new THREE.Group(); towerGroup.position.set(8, 0, 0); scGroup.add(towerGroup);
+        const towerSkeleton = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 3, towerHeight, 4), this.steelLatticeMat); towerSkeleton.position.y = towerHeight / 2; towerGroup.add(towerSkeleton);
+        const trench = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 1), this.concreteMat); trench.position.set(1, 0.1, 0); scGroup.add(trench);
+        const bunkerBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(4, 2, 5)) });
+        bunkerBody.position.set(this.position.x + x - 5, this.position.y + 2, this.position.z + z); this.world.addBody(bunkerBody);
+        const towerBody = new CANNON.Body({ mass: 0, shape: new CANNON.Cylinder(3, 3, towerHeight, 8) });
+        towerBody.position.set(this.position.x + x + 8, this.position.y + towerHeight/2, this.position.z + z); this.world.addBody(towerBody);
+    }
     createMotorPoolComplex(x, y, z) {
         const mpGroup = new THREE.Group(); mpGroup.position.set(x, y, z); this.group.add(mpGroup);
         const shedW = 20, shedL = 12, shedH = 6;
@@ -356,7 +374,6 @@ export class Base {
         body.addShape(new CANNON.Box(new CANNON.Vec3(shedW/2, 0.1, shedL/2)), new CANNON.Vec3(0, 0.1, 0));
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createFuelFarm(x, y, z) {
         const fuelGroup = new THREE.Group(); fuelGroup.position.set(x, y, z); this.group.add(fuelGroup);
         const farmW = 15, farmL = 15;
@@ -380,7 +397,6 @@ export class Base {
         net.rotation.x = -Math.PI/2; netGroup.add(net);
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createAmmunitionMags(x, y, z) {
         const magGroup = new THREE.Group(); magGroup.position.set(x, y, z); this.group.add(magGroup);
         const w = 12, l = 15, h = 4.5;
@@ -398,7 +414,6 @@ export class Base {
         const body = new CANNON.Body({ mass: 0 }); body.addShape(new CANNON.Box(new CANNON.Vec3(w/2 + 1, h/2 + 0.5, l/2)), new CANNON.Vec3(0, h/2 + 0.5, 0));
         body.position.set(this.position.x + x, this.position.y, this.position.z + z); this.world.addBody(body);
     }
-
     createTrainingGround(x, y, z) {
         const tgGroup = new THREE.Group(); tgGroup.position.set(x, y, z); this.group.add(tgGroup);
         const wallH = 2.5, wallW = 6;
@@ -417,47 +432,20 @@ export class Base {
             this.world.addBody(logBody);
         }
     }
-
-    createSupplyDepot() {
-        for(let i=0; i<20; i++) {
-            const rx = -15 + Math.random() * 30; const rz = 25 + Math.random() * 30;
-            if (Math.random() > 0.4) this.createCrate(rx, 0, rz); else this.createBarrel(rx, 0, rz);
-        }
-    }
-
-    createCrate(x, y, z) {
-        const s = 1.2 + Math.random() * 0.8;
-        const crate = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), this.woodMat); crate.position.set(x, s/2, z);
-        crate.rotation.y = Math.random() * Math.PI; this.group.add(crate);
-        const body = new CANNON.Body({ mass: 100, shape: new CANNON.Box(new CANNON.Vec3(s/2, s/2, s/2)) });
-        body.position.set(this.position.x + x, this.position.y + s/2, this.position.z + z);
-        const quat = new CANNON.Quaternion(); quat.setFromEuler(0, crate.rotation.y, 0); body.quaternion.copy(quat);
-        this.world.addBody(body); body.mesh = crate; 
-    }
-
-    createBarrel(x, y, z) {
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.2, 12), this.metalMat); barrel.position.set(x, 0.6, z); this.group.add(barrel);
-        const body = new CANNON.Body({ mass: 50, shape: new CANNON.Cylinder(0.4, 0.4, 1.2, 8) });
-        body.position.set(this.position.x + x, this.position.y + 0.6, this.position.z + z); this.world.addBody(body); body.mesh = barrel;
-    }
-
     update(delta, time) {
         this.searchlights.forEach((sl, i) => {
             sl.rotation.y = Math.sin(time * 0.5 + i) * 1.5; sl.rotation.x = Math.sin(time * 0.3 + i) * 0.4 - 0.2;
         });
     }
-
     createSpawnPad() {
         const pad = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 12), this.concreteMat); pad.position.set(0, 0.25, 0); this.group.add(pad);
         const padBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(6, 0.25, 6)) });
         padBody.position.set(this.position.x, this.position.y + 0.25, this.position.z); this.world.addBody(padBody);
     }
-
     createMinimapHighlight() {
         const iconGeo = new THREE.BoxGeometry(25, 1, 25); const iconMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
         const icon = new THREE.Mesh(iconGeo, iconMat); icon.position.set(0, 120, 0); icon.layers.set(1); this.group.add(icon);
     }
-
     createWaterTower(x, y, z) {
         const wtGroup = new THREE.Group(); wtGroup.position.set(x, y, z); this.group.add(wtGroup);
         const height = 20, tankRadius = 4, tankHeight = 5;

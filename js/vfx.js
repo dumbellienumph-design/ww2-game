@@ -23,7 +23,7 @@ export class VFX {
             p.position.copy(position);
             const dir = new THREE.Vector3(
                 (Math.random() - 0.5),
-                (Math.random() - 0.5) + 0.5, // Bias upward
+                (Math.random() - 0.5) + 0.5, 
                 (Math.random() - 0.5)
             ).normalize();
             p.userData.velocity = dir.multiplyScalar(Math.random() * 30 + 15);
@@ -31,25 +31,23 @@ export class VFX {
             particles.push(p);
         }
 
-        // --- AUDIO: MULTI-LAYERED REALISTIC EXPLOSION ---
+        // --- SCORCHED EARTH: BURN MARK ---
+        this.createBurnMark(scene, position, radius);
+
+        // --- AUDIO ---
         if (audio) {
-            // 1. The Blast (Core impact)
             audio.play('explosion_blast', { randomPitch: true });
-            
-            // 2. The Debris (Slightly delayed crunch)
             setTimeout(() => {
                 audio.play('explosion_debris', { randomPitch: true });
             }, 150);
 
-            // 3. Audio Ducking (Simulation of temporary deafness)
             const globalVol = audio.globalVolume;
-            audio.globalVolume = 0.1; // "Crush" other sounds
+            audio.globalVolume = 0.1; 
             setTimeout(() => {
-                audio.globalVolume = globalVol; // Restore after 1.5s
+                audio.globalVolume = globalVol; 
             }, 1500);
         }
 
-        // Animation logic
         let scale = 0.1;
         const startTime = Date.now();
         const duration = 600;
@@ -70,7 +68,7 @@ export class VFX {
 
             particles.forEach(p => {
                 p.position.add(p.userData.velocity.clone().multiplyScalar(0.016));
-                p.userData.velocity.y -= 0.5; // Gravity on debris
+                p.userData.velocity.y -= 0.5; 
                 p.userData.velocity.multiplyScalar(0.96); 
                 p.rotation.x += 0.2;
                 p.rotation.y += 0.2;
@@ -93,5 +91,34 @@ export class VFX {
                 body.applyImpulse(dir.scale(force), body.position);
             }
         });
+    }
+
+    static createBurnMark(scene, position, radius) {
+        const markGeo = new THREE.CircleGeometry(radius * 0.8, 16);
+        const markMat = new THREE.MeshBasicMaterial({ 
+            color: 0x111111, 
+            transparent: true, 
+            opacity: 0.7,
+            depthWrite: false, // Prevent z-fighting
+            polygonOffset: true,
+            polygonOffsetFactor: -4
+        });
+        const mark = new THREE.Mesh(markGeo, markMat);
+        mark.rotation.x = -Math.PI / 2;
+        mark.position.copy(position);
+        mark.position.y = 0.15; // Slightly above ground
+        scene.add(mark);
+
+        // Fade out slowly over 30 seconds
+        setTimeout(() => {
+            const startTime = Date.now();
+            const fade = () => {
+                const elapsed = Date.now() - startTime;
+                mark.material.opacity = 0.7 * (1 - (elapsed / 5000));
+                if (elapsed < 5000) requestAnimationFrame(fade);
+                else scene.remove(mark);
+            };
+            fade();
+        }, 25000);
     }
 }

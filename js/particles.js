@@ -32,11 +32,10 @@ export class ParticleSystem {
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.copy(position);
             
-            // Randomize velocity slightly
             const v = velocity.clone().add(new THREE.Vector3(
-                (Math.random() - 0.5) * 0.5,
-                (Math.random() - 0.5) * 0.5,
-                (Math.random() - 0.5) * 0.5
+                (Math.random() - 0.5) * 2.0,
+                (Math.random() - 0.5) * 2.0,
+                (Math.random() - 0.5) * 2.0
             ));
 
             this.scene.add(mesh);
@@ -54,7 +53,6 @@ export class ParticleSystem {
     }
 
     createMuzzleFlash(position, direction, isLarge = false) {
-        // Primary Core
         this.createEmitter({
             position: position,
             velocity: new THREE.Vector3(0, 0, 0),
@@ -64,11 +62,9 @@ export class ParticleSystem {
             opacity: 1.0
         });
 
-        // Lateral Wings for Large Caliber (Tiger)
         if (isLarge) {
             const right = new THREE.Vector3(1, 0, 0).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction));
             const left = right.clone().negate();
-
             [right, left].forEach(sideDir => {
                 this.createEmitter({
                     position: position,
@@ -80,13 +76,11 @@ export class ParticleSystem {
                     count: 5
                 });
             });
-
-            // Ground Kick-up
             const groundPos = position.clone(); groundPos.y = 0.5;
             this.createEmitter({
                 position: groundPos,
                 velocity: new THREE.Vector3(0, 5, 0),
-                color: 0x887766, // Dust color
+                color: 0x887766,
                 size: 3.0,
                 life: 1.0,
                 decay: 0.95,
@@ -109,28 +103,35 @@ export class ParticleSystem {
         });
     }
 
+    createDebris(position, color, count = 10) {
+        this.createEmitter({
+            position: position,
+            velocity: new THREE.Vector3(0, 5, 0),
+            color: color,
+            size: 0.4,
+            life: 1.5,
+            decay: 0.96,
+            gravity: 15,
+            opacity: 1.0,
+            count: count
+        });
+    }
+
     update(delta, camera) {
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
             p.life -= delta;
-
             if (p.life <= 0) {
                 this.scene.remove(p.mesh);
                 this.particles.splice(i, 1);
                 continue;
             }
-
-            // Physics
             p.velocity.y -= p.gravity * delta;
             p.mesh.position.add(p.velocity.clone().multiplyScalar(delta));
             p.velocity.multiplyScalar(p.decay);
-
-            // Billboarding
             p.mesh.lookAt(camera.position);
-
-            // Scale and Fade
             const progress = p.life / p.maxLife;
-            const s = p.startSize * (1 + (1 - progress) * 2);
+            const s = p.startSize * (0.5 + progress * 0.5);
             p.mesh.scale.set(s, s, s);
             p.mesh.material.opacity = p.startOpacity * progress;
         }
