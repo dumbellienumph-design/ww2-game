@@ -64,7 +64,7 @@ class Game {
             "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&q=80&w=1920"
         ];
 
-        this.activeRadius = 150; // Dynamic culling radius
+        this.activeRadius = 150; 
         this.cullingTimer = 0;
         
         this.initUI();
@@ -166,16 +166,16 @@ class Game {
         await Promise.all(soundAssets.map(async (s) => {
             await this.audio.loadSound(...s);
             finishedSounds++;
-            const soundProgress = 16 + (finishedSounds / soundAssets.length) * 44;
+            const soundProgress = 15 + (finishedSounds / soundAssets.length) * 45;
             updateUI(soundProgress, `SYNCING ASSET: ${s[0].toUpperCase()}...`);
         }));
 
         // --- STEP 3: WORLD GENERATION (60-90%) ---
-        updateUI(65, "ANALYZING TERRAIN DATA...");
+        updateUI(62, "ANALYZING TERRAIN DATA...");
         await yieldThread();
         this.terrain = new Terrain(this.scene, this.world);
         
-        updateUI(70, "CALIBRATING ATMOSPHERIC LIGHTS...");
+        updateUI(68, "CALIBRATING ATMOSPHERIC LIGHTS...");
         this.initLights();
         this.initPhysicsMaterial();
         await yieldThread();
@@ -184,11 +184,11 @@ class Game {
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         await yieldThread();
         
-        updateUI(80, "INITIALIZING BALLISTIC PARTICLES...");
+        updateUI(82, "INITIALIZING BALLISTIC PARTICLES...");
         this.particles = new ParticleSystem(this.scene);
         await yieldThread();
         
-        updateUI(85, "ARMING INFANTRY SQUAD...");
+        updateUI(88, "ARMING INFANTRY SQUAD...");
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
         this.player.body.position.set(-50, 5, -50); 
         this.player.audio = this.audio;
@@ -217,14 +217,18 @@ class Game {
         updateUI(96, "INFILTRATING STRIKE TEAMS...");
         this.spawnEnemies(12);
         this.spawnAllies(5);
+        await yieldThread();
         
         updateUI(98, "FINALIZING TACTICAL OVERLAY...");
         this.alliedTickets = 500;
         this.enemyTickets = 500;
-        this.activeVehicle = null;
+        this.activeRadius = 150;
         this.initMinimap();
         await yieldThread();
 
+        updateUI(99, "COMMAND READY.");
+        await yieldThread();
+        
         updateUI(100, "COMMAND AUTHORIZED. AWAITING DEPLOYMENT.");
 
         clearInterval(this.tipInterval);
@@ -244,7 +248,7 @@ class Game {
                 try { this.player.requestPointerLock(); } catch (e) {}
                 this.isLoaded = true;
             });
-        }, 500);
+        }, 300);
     }
 
     initLights() {
@@ -255,7 +259,7 @@ class Game {
         this.sunLight.castShadow = true;
         this.sunLight.shadow.mapSize.set(2048, 2048);
         this.scene.add(this.sunLight);
-        this.scene.fog = new THREE.FogExp2(0xd0e0e3, 0.002);
+        this.scene.fog = new THREE.FogExp2(0x050510, 0.002);
     }
 
     initPhysicsMaterial() {
@@ -331,7 +335,6 @@ class Game {
         if (!this.player || !this.isLoaded) return;
         const playerPos = this.player.body.position;
 
-        // 1. Culling Vegetation (Trees/Bushes)
         if (this.vegetation && this.vegetation.objects) {
             this.vegetation.objects.forEach(obj => {
                 const distSq = playerPos.distanceSquared(obj.body.position);
@@ -348,9 +351,6 @@ class Game {
                 }
             });
         }
-
-        // 2. Culling Dynamic Units (Except those you might need to track)
-        // For simplicity, we only cull vegetation for now as it's the biggest count.
     }
 
     animate() {
@@ -364,7 +364,7 @@ class Game {
         }
 
         this.cullingTimer += delta;
-        if (this.cullingTimer > 0.5) { // Update culling twice a second
+        if (this.cullingTimer > 0.5) { 
             this.updateCulling();
             this.cullingTimer = 0;
         }
