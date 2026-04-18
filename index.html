@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WW2 Action - Deployment</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui-layer">
+        <div id="main-menu" class="overlay">
+            <h1>WW2 FRONTLINES</h1>
+            <div class="mission-brief">
+                <h3>MISSION: OPERATION OVERLORD</h3>
+                <p>Location: Normandy Coast</p>
+                <p>Objectives: Clear the beachhead. Tanks and Air Support are available on-site.</p>
+            </div>
+            <div class="menu-buttons">
+                <button id="btn-mission-1">DEPLOY NOW</button>
+                <button id="btn-tutorial">HOW TO FIGHT</button>
+            </div>
+            <p class="hint">Press ESC to return to menu during gameplay</p>
+        </div>
+        <div id="game-ui" class="hidden">
+            <div id="crosshair">+</div>
+            <div id="stats">
+                <div id="health">HP: 100</div>
+                <div id="ammo">AMMO: 30/150</div>
+            </div>
+            <div id="minimap-container">
+                <canvas id="minimap-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+    <canvas id="game-canvas"></canvas>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
