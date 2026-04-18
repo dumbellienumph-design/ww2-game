@@ -181,13 +181,31 @@ class Game {
     initUI() {
         const menu = document.getElementById('main-menu');
         const gameUI = document.getElementById('game-ui');
-        document.getElementById('btn-mission-1').addEventListener('click', () => {
-            menu.classList.add('hidden');
-            gameUI.classList.remove('hidden');
-            this.player.requestPointerLock();
+        const deployBtn = document.getElementById('btn-mission-1');
+
+        deployBtn.addEventListener('click', () => {
+            deployBtn.innerText = "LOADING...";
+            deployBtn.disabled = true;
+
+            // Small delay to allow the browser to process UI changes before locking pointer
+            setTimeout(() => {
+                menu.classList.add('hidden');
+                gameUI.classList.remove('hidden');
+                
+                // Wrap in try-catch as Pointer Lock requires user interaction and can fail
+                try {
+                    this.player.requestPointerLock();
+                } catch (e) {
+                    console.warn("Pointer lock failed, but mission starting.");
+                }
+                
+                deployBtn.innerText = "DEPLOY NOW";
+                deployBtn.disabled = false;
+            }, 500);
         });
+
         document.getElementById('btn-tutorial').addEventListener('click', () => {
-            alert('WASD Move, Mouse Look, F Enter/Exit, Left Click Shoot. Space Jump.');
+            alert('WASD Move, Mouse Look, F Enter/Exit, Left Click Shoot. Space Jump. Right Click Sniper Mode.');
         });
         document.addEventListener('keydown', (e) => {
             if(e.key === 'Escape') { menu.classList.remove('hidden'); gameUI.classList.add('hidden'); document.exitPointerLock(); }
