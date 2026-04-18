@@ -21,7 +21,8 @@ export class Player {
         
         this.moveState = {
             forward: false, backward: false, left: false, right: false,
-            jump: false, shoot: false, ads: false
+            jump: false, shoot: false, ads: false,
+            crouch: false, prone: false, leanLeft: false, leanRight: false
         };
 
         this.weapons = [
@@ -42,8 +43,6 @@ export class Player {
             }
         ];
         this.currentWeaponIndex = 0;
-        
-        // --- 6.4 GRENADE LOGISTICS ---
         this.grenades = 3;
         this.grenadeList = [];
 
@@ -51,6 +50,11 @@ export class Player {
         this.reloadTimer = 0;
         this.isReloading = false;
         this.adsFactor = 0;
+        
+        // --- 6.5 STANCE FACTORS ---
+        this.currentHeight = 0.7; // Target local Y offset
+        this.leanAngle = 0;
+        this.leanOffset = 0;
 
         this.initPhysics();
         this.initControls();
@@ -93,8 +97,11 @@ export class Player {
             if(e.code === 'Digit2') this.switchWeapon(1);
             if(e.code === 'Digit3') this.switchWeapon(2);
             if(e.code === 'KeyR') this.reload();
-            // --- 6.4 GRENADE KEY ---
             if(e.code === 'KeyG') this.throwGrenade();
+            
+            // --- 6.5 STANCE KEYS ---
+            if(e.code === 'KeyZ') this.moveState.prone = !this.moveState.prone;
+            if(e.code === 'KeyC') this.moveState.crouch = !this.moveState.crouch;
         });
         document.addEventListener('keyup', (e) => this.onKey(e.code, false));
         
@@ -133,17 +140,12 @@ export class Player {
 
     throwGrenade() {
         if (this.grenades <= 0 || this.isReloading) return;
-        
         this.grenades--;
         if(this.audio) this.audio.play('ui_click');
-
         const throwPos = this.camera.position.clone();
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        // Add a bit of upward arc
-        dir.y += 0.2;
-        dir.normalize();
-        
-        const velocity = dir.multiplyScalar(25); // Fast stick throw
+        dir.y += 0.2; dir.normalize();
+        const velocity = dir.multiplyScalar(25);
         const grenade = new Grenade(this.scene, this.world, throwPos, velocity, this.audio);
         this.grenadeList.push(grenade);
     }
@@ -154,7 +156,8 @@ export class Player {
             case 'KeyS': this.moveState.backward = isPressed; break;
             case 'KeyA': this.moveState.left = isPressed; break;
             case 'KeyD': this.moveState.right = isPressed; break;
-            case 'ShiftLeft': this.moveState.crouch = isPressed; break;
+            case 'KeyQ': this.moveState.leanLeft = isPressed; break;
+            case 'KeyE': this.moveState.leanRight = isPressed; break;
             case 'Space': this.moveState.jump = isPressed; break;
         }
     }
@@ -173,18 +176,15 @@ export class Player {
         const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.4), stockMat);
         stock.position.set(0, -0.05, 0.3);
         this.gunGroup.add(stock);
-
         const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.08, 0.02), metalMat);
         frontSight.position.set(0, 0.05, -weapon.length);
         this.gunGroup.add(frontSight);
         const rearSight = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.005, 8, 16, Math.PI), metalMat);
         rearSight.rotation.y = Math.PI/2; rearSight.position.set(0, 0.1, -0.2);
         this.gunGroup.add(rearSight);
-        
         this.muzzle = new THREE.Object3D();
         this.muzzle.position.set(0, 0, -weapon.length);
         this.gunGroup.add(this.muzzle);
-
         this.gunGroup.position.set(0.3, -0.3, -0.5);
         this.camera.add(this.gunGroup);
         this.scene.add(this.camera);
@@ -208,7 +208,6 @@ export class Player {
         const weapon = this.weapons[this.currentWeaponIndex];
         if (weapon.ammo <= 0) { if(this.audio) this.audio.play('ui_click'); return; }
         weapon.ammo--;
-
         if (weapon.name === 'M1 Garand' && weapon.ammo === 0) {
             if(this.audio) {
                 this.audio.play('rifle_fire', { randomPitch: true });
@@ -218,18 +217,15 @@ export class Player {
             this.audio.play('rifle_fire', { randomPitch: true });
             if (weapon.type === 'bolt') { setTimeout(() => { this.audio.play('rifle_cycle'); }, 500); }
         }
-
         if(this.particles) {
             const muzzleWorldPos = new THREE.Vector3();
             this.muzzle.getWorldPosition(muzzleWorldPos);
             const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
             this.particles.createMuzzleFlash(muzzleWorldPos, dir, false);
         }
-
         const recoilAmount = this.moveState.ads ? 0.02 : 0.05;
         this.gunGroup.position.z += recoilAmount;
         setTimeout(() => this.gunGroup.position.z -= recoilAmount, 50);
-
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
         const intersects = raycaster.intersectObjects(this.scene.children, true);
@@ -271,11 +267,32 @@ export class Player {
             }
         }
 
-        // --- GRENADE LIST UPDATE ---
         this.grenadeList.forEach((g, i) => {
             g.update(delta);
             if (g.isExploded) this.grenadeList.splice(i, 1);
         });
+
+        // --- 6.5 STANCE LOGIC ---
+        let targetHeight = 0.7; // Stand
+        let speedMult = 1.0;
+        if (this.moveState.prone) {
+            targetHeight = -0.2;
+            speedMult = 0.2;
+            this.moveState.crouch = false;
+        } else if (this.moveState.crouch) {
+            targetHeight = 0.2;
+            speedMult = 0.5;
+        }
+        this.currentHeight = THREE.MathUtils.lerp(this.currentHeight, targetHeight, 0.1);
+
+        // LEANING LOGIC
+        let targetLeanAngle = 0;
+        let targetLeanOffset = 0;
+        if (this.moveState.leanLeft) { targetLeanAngle = 0.2; targetLeanOffset = -0.4; }
+        else if (this.moveState.leanRight) { targetLeanAngle = -0.2; targetLeanOffset = 0.4; }
+        
+        this.leanAngle = THREE.MathUtils.lerp(this.leanAngle, targetLeanAngle, 0.1);
+        this.leanOffset = THREE.MathUtils.lerp(this.leanOffset, targetLeanOffset, 0.1);
 
         const targetAdsFactor = this.moveState.ads ? 1.0 : 0;
         this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
@@ -283,8 +300,7 @@ export class Player {
         const hipPos = new THREE.Vector3(0.3, -0.3, -0.5);
         const adsPos = new THREE.Vector3(0, -0.12, -0.3);
         if (this.isReloading) {
-            const reloadHidePos = new THREE.Vector3(0.3, -1.0, -0.5);
-            this.gunGroup.position.lerp(reloadHidePos, 0.1);
+            this.gunGroup.position.lerp(new THREE.Vector3(0.3, -1.0, -0.5), 0.1);
         } else {
             this.gunGroup.position.lerpVectors(hipPos, adsPos, this.adsFactor);
         }
@@ -314,7 +330,7 @@ export class Player {
         if (moveDir.length() > 0) {
             moveDir.normalize();
             const currentY = this.body.velocity.y;
-            const currentSpeed = this.walkSpeed * THREE.MathUtils.lerp(1.0, weapon.adsSpeed, this.adsFactor);
+            const currentSpeed = this.walkSpeed * speedMult * THREE.MathUtils.lerp(1.0, weapon.adsSpeed, this.adsFactor);
             this.body.velocity.x = moveDir.x * currentSpeed;
             this.body.velocity.z = moveDir.z * currentSpeed;
             this.body.velocity.y = currentY;
@@ -323,13 +339,20 @@ export class Player {
             this.body.velocity.z *= 0.5;
         }
 
-        if (this.moveState.jump && this.canJump && !this.moveState.ads) {
+        if (this.moveState.jump && this.canJump && !this.moveState.ads && !this.moveState.prone) {
             this.body.velocity.y = 10;
             this.canJump = false;
         }
 
+        // Apply Stance & Lean to Camera
         this.camera.position.x = this.body.position.x;
-        this.camera.position.y = this.body.position.y + 0.7;
+        this.camera.position.y = this.body.position.y + this.currentHeight;
         this.camera.position.z = this.body.position.z;
+        
+        // Add lateral lean offset based on camera's right vector
+        const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+        this.camera.position.add(camRight.multiplyScalar(this.leanOffset));
+        
+        this.camera.rotation.z = this.leanAngle;
     }
 }
