@@ -55,6 +55,15 @@ class Game {
             "TIP: Press F to enter or exit available vehicles on the battlefield.",
             "TIP: The mini-map shows friendly units in green and detected enemies in red."
         ];
+
+        this.loadingImages = [
+            "https://images.unsplash.com/photo-1599032909756-5dee8c65f6d6?auto=format&fit=crop&q=80&w=1920", // Tank
+            "https://images.unsplash.com/photo-1518112166137-859095689100?auto=format&fit=crop&q=80&w=1920", // Plane
+            "https://images.unsplash.com/photo-1533560913523-c0978282c06a?auto=format&fit=crop&q=80&w=1920", // Soldiers
+            "https://images.unsplash.com/photo-1506197357084-5853f75196d7?auto=format&fit=crop&q=80&w=1920", // Coast/Beach
+            "https://images.unsplash.com/photo-1440439603332-159e99298f3c?auto=format&fit=crop&q=80&w=1920", // Old Map
+            "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&q=80&w=1920"  // Battlefield vibes
+        ];
         
         this.initUI();
         
@@ -73,8 +82,6 @@ class Game {
             loadingScreen.classList.remove('hidden');
             
             this.audio.startAudioContext();
-            
-            // Start the music and the loading simultaneously
             this.loadGame();
         });
 
@@ -89,15 +96,29 @@ class Game {
 
     startTipCycle() {
         const tipElement = document.getElementById('loading-tip');
+        const bgElement = document.getElementById('loading-background');
         let tipIndex = 0;
+        let imgIndex = 0;
+
+        // Set initial image
+        bgElement.style.backgroundImage = `url('${this.loadingImages[0]}')`;
+
         this.tipInterval = setInterval(() => {
             tipIndex = (tipIndex + 1) % this.tips.length;
+            imgIndex = (imgIndex + 1) % this.loadingImages.length;
+
+            // Fade out tip
             tipElement.style.opacity = 0;
+            
             setTimeout(() => {
+                // Update tip and image
                 tipElement.innerText = this.tips[tipIndex];
+                bgElement.style.backgroundImage = `url('${this.loadingImages[imgIndex]}')`;
+                
+                // Fade in tip
                 tipElement.style.opacity = 1;
             }, 500);
-        }, 4000);
+        }, 4500);
     }
 
     async loadGame() {

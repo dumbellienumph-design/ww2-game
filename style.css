@@ -109,7 +109,29 @@ button:hover {
     letter-spacing: 2px;
 }
 
-/* Loading Screen Styles */
+#loading-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    filter: brightness(0.3) grayscale(0.5);
+    transition: background-image 1s ease-in-out;
+    z-index: -1;
+}
+
+#loading-background::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, transparent 0%, rgba(0,0,0,0.8) 100%);
+}
+
 .loading-content {
     width: 80%;
     max-width: 900px;
