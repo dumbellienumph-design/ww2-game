@@ -11,10 +11,10 @@ export class Ally {
         this.health = 100;
         this.speed = 4.5;
         this.isDead = false;
-        this.state = 'follow'; // follow, defend, combat
+        this.state = 'waiting'; // Changed from 'follow'
         
         this.fireTimer = Math.random() * 2;
-        this.fireRate = 1.5; // Garand-style semi
+        this.fireRate = 1.5; 
         this.detectionDist = 80;
 
         this.group = new THREE.Group();
@@ -69,13 +69,18 @@ export class Ally {
         }
     }
 
-    update(delta, playerPos, enemies, objectives) {
+    update(delta, playerPos, enemies, objectives, isPlayerActive) {
         if (this.isDead) return;
+
+        // Start acting only when player moves
+        if (this.state === 'waiting') {
+            if (isPlayerActive) this.state = 'follow';
+            return;
+        }
 
         const currentPos = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
         const distToPlayer = currentPos.distanceTo(playerPos);
 
-        // --- 7.1 DECIDE STATE ---
         let nearestEnemy = null;
         let minDist = this.detectionDist;
         enemies.forEach(e => {
@@ -91,7 +96,6 @@ export class Ally {
             else this.state = 'follow';
         }
 
-        // --- 7.1 EXECUTE STATE ---
         const moveDir = new THREE.Vector3();
         
         if (this.state === 'follow') {
