@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WW2 Action - Deployment</title>
+    <title>WW2 FRONTLINES - Action Deployment</title>
     <link rel="stylesheet" href="style.css">
     <script type="importmap">
         {
@@ -16,36 +16,48 @@
     </script>
 </head>
 <body>
-    <div id="init-overlay" class="overlay">
-        <h1>WW2 FRONTLINES</h1>
-        <button id="btn-init">BEGIN MISSION</button>
-    </div>
-
-    <div id="ui-layer" class="hidden">
-        <div id="main-menu" class="overlay">
+    <!-- 1. INITIAL HOME SCREEN (Waits for user) -->
+    <div id="home-screen" class="overlay">
+        <div class="title-container">
             <h1>WW2 FRONTLINES</h1>
-            <div class="mission-brief">
-                <h3>MISSION BRIEFING: OPERATION OVERLORD</h3>
-                <p><strong>LOCATION:</strong> NORMANDY COAST, SECTOR 7</p>
-                <p><strong>OBJECTIVE:</strong> SECURE THE BEACHHEAD AND CAPTURE KEY STRATEGIC POINTS. ALLIED ARMOR AND AIR SUPPORT ARE EN ROUTE.</p>
-                <p><strong>INTEL:</strong> EXPECT HEAVY RESISTANCE AT ABLE, BAKER, AND CHARLIE. AXIS FORCES HAVE FORTIFIED POSITIONS.</p>
-            </div>
-            <div class="menu-buttons">
-                <button id="btn-mission-1">DEPLOY TO FRONT</button>
-                <button id="btn-tutorial">COMBAT TRAINING</button>
-            </div>
-            <p class="hint">ESC: RETURN TO BASE | F: TOGGLE VEHICLE | RIGHT-CLICK: ZOOM</p>
+            <div class="brand-line">THE ULTIMATE BATTLE FOR EUROPE</div>
+        </div>
+        
+        <div class="mission-brief">
+            <h3>OPERATION OVERLORD</h3>
+            <p>JUNE 6, 1944. You are part of the first wave hitting the Normandy coast. Your mission is to secure the beachhead and push inland to capture key strategic points: ABLE, BAKER, and CHARLIE.</p>
+            <p><strong>MISSION TYPE:</strong> CONQUEST</p>
+            <p><strong>ASSETS:</strong> INFANTRY, TANK DIVISIONS, AIR SUPPORT</p>
         </div>
 
-        <div id="loading-screen" class="overlay hidden">
-            <h1>DEPLOYING FORCES...</h1>
+        <div class="menu-buttons">
+            <button id="btn-begin">BEGIN MISSION</button>
+        </div>
+        
+        <div class="disclaimer">PRESS BEGIN TO INITIALIZE FIELD COMMAND</div>
+    </div>
+
+    <!-- 2. LOADING SCREEN (Synchronized 0-100%) -->
+    <div id="loading-screen" class="overlay hidden">
+        <div class="loading-content">
+            <h2 id="loading-title">INITIALIZING DEPLOYMENT</h2>
             <div class="loading-container">
                 <div id="loading-bar"></div>
             </div>
-            <p id="loading-status">RECEIVING INTEL...</p>
+            <div class="loading-stats">
+                <span id="loading-status">CALIBRATING TACTICAL DATA...</span>
+                <span id="loading-percentage">0%</span>
+            </div>
         </div>
+        
+        <div class="briefing-ticker">
+            <p>TIP: Use Tanks to provide cover for infantry when approaching MG nests.</p>
+        </div>
+    </div>
 
-        <div id="game-ui" class="hidden">
+    <!-- 3. GAME UI (Hidden until 100%) -->
+    <div id="ui-layer" class="hidden">
+        <div id="game-ui">
             <div id="crosshair">+</div>
             <div id="stats">
                 <div id="health">HP: 100</div>
@@ -55,7 +67,17 @@
                 <canvas id="minimap-canvas"></canvas>
             </div>
         </div>
+
+        <!-- Esc Menu -->
+        <div id="esc-menu" class="overlay hidden">
+            <h1>PAUSED</h1>
+            <div class="menu-buttons">
+                <button id="btn-resume">RESUME</button>
+                <button onclick="location.reload()">REDEPLOY</button>
+            </div>
+        </div>
     </div>
+
     <canvas id="game-canvas"></canvas>
     <script type="module" src="js/main.js"></script>
 </body>
