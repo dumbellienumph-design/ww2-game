@@ -200,8 +200,60 @@ button:hover {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 2.5rem;
-    color: rgba(0, 255, 0, 0.8);
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+    transition: transform 0.1s;
+}
+
+#crosshair .line {
+    position: absolute;
+    background: rgba(0, 255, 0, 0.8);
+    box-shadow: 0 0 4px #000;
+}
+
+#crosshair .line.top { top: 0; left: 11px; width: 2px; height: 8px; }
+#crosshair .line.bottom { bottom: 0; left: 11px; width: 2px; height: 8px; }
+#crosshair .line.left { top: 11px; left: 0; width: 8px; height: 2px; }
+#crosshair .line.right { top: 11px; right: 0; width: 8px; height: 2px; }
+
+.hitmarker {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 30px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.hitmarker::before, .hitmarker::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 2px;
+    background: #fff;
+    box-shadow: 0 0 5px #ff0000;
+}
+
+.hitmarker::before { transform: translate(-50%, -50%) rotate(45deg); }
+.hitmarker::after { transform: translate(-50%, -50%) rotate(-45deg); }
+
+.hitmarker.active {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+}
+
+.hitmarker.kill {
+    background: #ff0000;
+}
+
+.hitmarker.kill::before, .hitmarker.kill::after {
+    background: #ff0000;
 }
 
 #stats {

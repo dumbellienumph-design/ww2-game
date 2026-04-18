@@ -51,10 +51,12 @@ export class Player {
         this.isReloading = false;
         this.adsFactor = 0;
         
-        // --- 6.5 STANCE FACTORS ---
-        this.currentHeight = 0.7; // Target local Y offset
+        // --- STANCE & PROCEDURAL ANIMATION ---
+        this.currentHeight = 0.7; 
         this.leanAngle = 0;
         this.leanOffset = 0;
+        this.bobTimer = 0;
+        this.sway = new THREE.Vector3(0,0,0);
 
         this.initPhysics();
         this.initControls();
@@ -89,6 +91,10 @@ export class Player {
                 this.euler.x -= e.movementY * sensitivity;
                 this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
                 this.camera.quaternion.setFromEuler(this.euler);
+                
+                // Add weapon sway based on mouse movement
+                this.sway.x = -e.movementX * 0.0003;
+                this.sway.y = e.movementY * 0.0003;
             }
         });
         document.addEventListener('keydown', (e) => {
@@ -99,7 +105,6 @@ export class Player {
             if(e.code === 'KeyR') this.reload();
             if(e.code === 'KeyG') this.throwGrenade();
             
-            // --- 6.5 STANCE KEYS ---
             if(e.code === 'KeyZ') this.moveState.prone = !this.moveState.prone;
             if(e.code === 'KeyC') this.moveState.crouch = !this.moveState.crouch;
         });
@@ -203,11 +208,29 @@ export class Player {
         }
     }
 
+    showHitmarker(isKill) {
+        const hm = document.getElementById('hitmarker');
+        if (!hm) return;
+        hm.classList.remove('active', 'kill');
+        void hm.offsetWidth; 
+        hm.classList.add('active');
+        if (isKill) hm.classList.add('kill');
+        setTimeout(() => {
+            hm.classList.remove('active', 'kill');
+        }, 150);
+    }
+
     shoot() {
         if (this.isReloading) return;
         const weapon = this.weapons[this.currentWeaponIndex];
         if (weapon.ammo <= 0) { if(this.audio) this.audio.play('ui_click'); return; }
         weapon.ammo--;
+        
+        // Procedural recoil kick
+        const recoilAmount = this.moveState.ads ? 0.02 : 0.05;
+        this.gunGroup.position.z += recoilAmount;
+        this.gunGroup.rotation.x += recoilAmount * 0.5;
+        
         if (weapon.name === 'M1 Garand' && weapon.ammo === 0) {
             if(this.audio) {
                 this.audio.play('rifle_fire', { randomPitch: true });
@@ -223,16 +246,18 @@ export class Player {
             const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
             this.particles.createMuzzleFlash(muzzleWorldPos, dir, false);
         }
-        const recoilAmount = this.moveState.ads ? 0.02 : 0.05;
-        this.gunGroup.position.z += recoilAmount;
-        setTimeout(() => this.gunGroup.position.z -= recoilAmount, 50);
+
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
         const intersects = raycaster.intersectObjects(this.scene.children, true);
         if (intersects.length > 0) {
             const hit = intersects[0];
             const hitBody = this.findPhysicsBody(hit.object);
-            if (hitBody && hitBody.onHit) hitBody.onHit(weapon.damage);
+            if (hitBody && hitBody.onHit) {
+                hitBody.onHit(weapon.damage);
+                const isKill = (hitBody.health !== undefined && hitBody.health <= 0) || hitBody.isDead;
+                this.showHitmarker(isKill);
+            }
         }
     }
 
@@ -272,7 +297,7 @@ export class Player {
             if (g.isExploded) this.grenadeList.splice(i, 1);
         });
 
-        // --- 6.5 STANCE LOGIC ---
+        // --- STANCE LOGIC ---
         let targetHeight = 0.7; // Stand
         let speedMult = 1.0;
         if (this.moveState.prone) {
@@ -297,25 +322,7 @@ export class Player {
         const targetAdsFactor = this.moveState.ads ? 1.0 : 0;
         this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
 
-        const hipPos = new THREE.Vector3(0.3, -0.3, -0.5);
-        const adsPos = new THREE.Vector3(0, -0.12, -0.3);
-        if (this.isReloading) {
-            this.gunGroup.position.lerp(new THREE.Vector3(0.3, -1.0, -0.5), 0.1);
-        } else {
-            this.gunGroup.position.lerpVectors(hipPos, adsPos, this.adsFactor);
-        }
-
-        const targetFOV = THREE.MathUtils.lerp(this.baseFOV, weapon.adsFOV, this.adsFactor);
-        if (Math.abs(this.camera.fov - targetFOV) > 0.1) {
-            this.camera.fov = targetFOV;
-            this.camera.updateProjectionMatrix();
-        }
-
-        if (this.moveState.shoot && !this.isReloading) {
-            this.fireTimer += delta;
-            if (this.fireTimer >= weapon.fireRate) { this.shoot(); this.fireTimer = 0; }
-        } else if(!weapon.auto) this.fireTimer = weapon.fireRate;
-
+        // Calculate Movement Direction
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
         forward.y = 0; forward.normalize();
         const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -327,10 +334,11 @@ export class Player {
         if (this.moveState.left) moveDir.sub(right);
         if (this.moveState.right) moveDir.add(right);
 
+        let currentSpeed = 0;
         if (moveDir.length() > 0) {
             moveDir.normalize();
             const currentY = this.body.velocity.y;
-            const currentSpeed = this.walkSpeed * speedMult * THREE.MathUtils.lerp(1.0, weapon.adsSpeed, this.adsFactor);
+            currentSpeed = this.walkSpeed * speedMult * THREE.MathUtils.lerp(1.0, weapon.adsSpeed, this.adsFactor);
             this.body.velocity.x = moveDir.x * currentSpeed;
             this.body.velocity.z = moveDir.z * currentSpeed;
             this.body.velocity.y = currentY;
@@ -344,12 +352,41 @@ export class Player {
             this.canJump = false;
         }
 
+        // --- PROCEDURAL ANIMATION: Sway & Bobbing ---
+        this.sway.lerp(new THREE.Vector3(0,0,0), 0.1); // Recover sway
+        
+        if (currentSpeed > 0 && !this.moveState.jump) {
+            this.bobTimer += delta * currentSpeed * 1.2;
+        } else {
+            this.bobTimer += delta * 2.0; // Idle breathing
+        }
+        
+        const bobOffset = Math.sin(this.bobTimer) * (currentSpeed > 0 ? 0.04 : 0.01) * (1 - this.adsFactor * 0.8);
+        const bobSide = Math.cos(this.bobTimer * 0.5) * (currentSpeed > 0 ? 0.02 : 0) * (1 - this.adsFactor * 0.8);
+
+        const hipPos = new THREE.Vector3(0.3 + this.sway.x + bobSide, -0.3 + this.sway.y + Math.abs(bobOffset), -0.5);
+        const adsPos = new THREE.Vector3(0 + this.sway.x * 0.1, -0.12 + this.sway.y * 0.1, -0.3);
+        
+        // Recover recoil rotation
+        this.gunGroup.rotation.x = THREE.MathUtils.lerp(this.gunGroup.rotation.x, 0, 0.1);
+
+        if (this.isReloading) {
+            this.gunGroup.position.lerp(new THREE.Vector3(0.3, -1.0, -0.5), 0.1);
+        } else {
+            this.gunGroup.position.lerpVectors(hipPos, adsPos, this.adsFactor);
+        }
+
+        const targetFOV = THREE.MathUtils.lerp(this.baseFOV, weapon.adsFOV, this.adsFactor);
+        if (Math.abs(this.camera.fov - targetFOV) > 0.1) {
+            this.camera.fov = targetFOV;
+            this.camera.updateProjectionMatrix();
+        }
+
         // Apply Stance & Lean to Camera
         this.camera.position.x = this.body.position.x;
-        this.camera.position.y = this.body.position.y + this.currentHeight;
+        this.camera.position.y = this.body.position.y + this.currentHeight + bobOffset;
         this.camera.position.z = this.body.position.z;
         
-        // Add lateral lean offset based on camera's right vector
         const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
         this.camera.position.add(camRight.multiplyScalar(this.leanOffset));
         
