@@ -11,7 +11,7 @@ export class Ally {
         this.health = 100;
         this.speed = 4.5;
         this.isDead = false;
-        this.state = 'waiting'; // Changed from 'follow'
+        this.state = 'waiting'; 
         
         this.fireTimer = Math.random() * 2;
         this.fireRate = 1.5; 
@@ -72,7 +72,6 @@ export class Ally {
     update(delta, playerPos, enemies, objectives, isPlayerActive) {
         if (this.isDead) return;
 
-        // Start acting only when player moves
         if (this.state === 'waiting') {
             if (isPlayerActive) this.state = 'follow';
             return;
@@ -124,7 +123,7 @@ export class Ally {
     }
 
     shoot(target) {
-        if (this.audio) this.audio.play('rifle_fire', { randomPitch: true });
+        if (this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_fire', { randomPitch: true });
         
         const startPos = this.group.position.clone().add(new THREE.Vector3(0, 1.2, 0));
         const targetPos = target.group.position.clone().add(new THREE.Vector3(0, 1.0, 0));

@@ -25,7 +25,6 @@ export class Tank {
 
         this.initAimingReticle();
         
-        // --- 5.1 DAMAGE & DEGRADATION ---
         this.maxHealth = 200;
         this.health = 200;
         this.maxFuel = 100;
@@ -149,14 +148,14 @@ export class Tank {
 
         if (!this.isOccupied) {
             if(this.reticle) this.reticle.visible = false;
-            if(this.audio) this.audio.stop('tank_engine');
+            if(this.audio && typeof this.audio.stop === 'function') this.audio.stop('tank_engine');
             return;
         }
 
         const speed = this.body.velocity.length();
 
         // --- FUEL DEGRADATION ---
-        if(speed > 1) this.fuel -= delta * 0.1; // Thirsty Tiger
+        if(speed > 1) this.fuel -= delta * 0.1; 
         if(this.fuel <= 0) { this.fuel = 0; controls.forward = false; controls.backward = false; }
 
         // --- VISUAL DAMAGE STATES ---
@@ -175,10 +174,10 @@ export class Tank {
             this.damageTimer = 0;
         }
 
-        if (this.audio) {
+        if (this.audio && typeof this.audio.play === 'function') {
             this.audio.play('tank_engine');
             const pitchRate = 1.0 + (speed / 15) * 0.8;
-            this.audio.setPlaybackRate('tank_engine', pitchRate);
+            if (typeof this.audio.setPlaybackRate === 'function') this.audio.setPlaybackRate('tank_engine', pitchRate);
         }
 
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
@@ -240,7 +239,7 @@ export class Tank {
 
     fire() {
         this.ammo--;
-        if(this.audio) this.audio.play('tank_fire');
+        if(this.audio && typeof this.audio.play === 'function') this.audio.play('tank_fire');
         const tip = new THREE.Vector3(0, 0, -6.5).applyMatrix4(this.barrelGroup.matrixWorld);
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.barrelGroup.getWorldQuaternion(new THREE.Quaternion()));
         if(this.particles) this.particles.createMuzzleFlash(tip, dir, true);

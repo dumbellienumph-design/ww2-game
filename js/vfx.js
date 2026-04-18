@@ -35,17 +35,11 @@ export class VFX {
         this.createBurnMark(scene, position, radius);
 
         // --- AUDIO ---
-        if (audio) {
+        if (audio && typeof audio.play === 'function') {
             audio.play('explosion_blast', { randomPitch: true });
             setTimeout(() => {
-                audio.play('explosion_debris', { randomPitch: true });
+                if (typeof audio.play === 'function') audio.play('explosion_debris', { randomPitch: true });
             }, 150);
-
-            const globalVol = audio.globalVolume;
-            audio.globalVolume = 0.1; 
-            setTimeout(() => {
-                audio.globalVolume = globalVol; 
-            }, 1500);
         }
 
         let scale = 0.1;
@@ -99,17 +93,16 @@ export class VFX {
             color: 0x111111, 
             transparent: true, 
             opacity: 0.7,
-            depthWrite: false, // Prevent z-fighting
+            depthWrite: false, 
             polygonOffset: true,
             polygonOffsetFactor: -4
         });
         const mark = new THREE.Mesh(markGeo, markMat);
         mark.rotation.x = -Math.PI / 2;
         mark.position.copy(position);
-        mark.position.y = 0.15; // Slightly above ground
+        mark.position.y = 0.15; 
         scene.add(mark);
 
-        // Fade out slowly over 30 seconds
         setTimeout(() => {
             const startTime = Date.now();
             const fade = () => {

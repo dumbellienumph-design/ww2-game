@@ -16,17 +16,23 @@ export class Helicopter {
         this.initVisuals();
         
         this.isOccupied = false;
-        this.rotorRotation = 0;
-        this.fireTimer = 0;
-        this.fireRate = 0.15;
+        this.isSniperMode = false; 
 
-        // --- 5.1 DAMAGE & DEGRADATION ---
-        this.maxHealth = 100;
-        this.health = 100;
+        // --- 5.2 FLIGHT DYNAMICS ---
+        this.maxHealth = 150;
+        this.health = 150;
         this.maxFuel = 100;
         this.fuel = 100;
-        this.ammo = 500;
+        this.ammo = 1000;
         this.isDestroyed = false;
+
+        this.enginePower = 0;
+        this.targetAltitude = 15;
+        this.yaw = 0;
+        this.pitch = 0;
+        this.roll = 0;
+
+        this.fireTimer = 0;
         this.damageTimer = 0;
 
         this.body.onHit = (damage) => this.takeDamage(damage);
@@ -38,17 +44,18 @@ export class Helicopter {
         if(this.health <= 0) {
             this.health = 0;
             this.isDestroyed = true;
-            VFX.createExplosion(this.scene, this.world, this.group.position, 10, 50, this.audio);
+            VFX.createExplosion(this.scene, this.world, this.group.position, 12, 100, this.audio);
+            this.body.mass = 5000; // Drop like a rock
         }
     }
 
     initPhysics(position) {
-        const bodyShape = new CANNON.Box(new CANNON.Vec3(1, 1, 3));
+        const shape = new CANNON.Box(new CANNON.Vec3(2, 1.2, 5));
         this.body = new CANNON.Body({
-            mass: 1500, 
-            shape: bodyShape,
+            mass: 0, // Kinematic/Static until occupied
+            shape: shape,
             position: new CANNON.Vec3(position.x, position.y, position.z),
-            linearDamping: 0.1,
+            linearDamping: 0.8,
             angularDamping: 0.8
         });
         this.world.addBody(this.body);
@@ -56,133 +63,129 @@ export class Helicopter {
     }
 
     initVisuals() {
-        const fuseGeo = new THREE.BoxGeometry(2, 2, 6);
-        const fuseMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
-        this.fuselage = new THREE.Mesh(fuseGeo, fuseMat);
-        this.group.add(this.fuselage);
+        const armyGreen = new THREE.MeshStandardMaterial({ color: 0x2e3b23, roughness: 0.8 });
+        const darkMetal = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8 });
+        const cockpitGlass = new THREE.MeshStandardMaterial({ color: 0x88ccff, transparent: true, opacity: 0.5 });
+
+        const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(1.5, 6, 4, 8), armyGreen);
+        fuselage.rotation.x = Math.PI / 2;
+        this.group.add(fuselage);
+
+        const cockpit = new THREE.Mesh(new THREE.SphereGeometry(1.4, 16, 16, 0, Math.PI, 0, Math.PI), cockpitGlass);
+        cockpit.position.set(0, 0.2, -3.5);
+        cockpit.rotation.x = -Math.PI / 2;
+        this.group.add(cockpit);
 
         this.rotorGroup = new THREE.Group();
-        this.rotorGroup.position.set(0, 1.2, 0);
+        this.rotorGroup.position.y = 1.8;
         this.group.add(this.rotorGroup);
+        const bladeGeo = new THREE.BoxGeometry(10, 0.05, 0.4);
+        const blade1 = new THREE.Mesh(bladeGeo, darkMetal);
+        this.rotorGroup.add(blade1);
+        const blade2 = blade1.clone(); blade2.rotation.y = Math.PI / 2;
+        this.rotorGroup.add(blade2);
 
-        const bladeGeo = new THREE.BoxGeometry(10, 0.05, 0.5);
-        const bladeMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-        const blade1 = new THREE.Mesh(bladeGeo, bladeMat);
-        const blade2 = new THREE.Mesh(bladeGeo, bladeMat);
-        blade2.rotation.y = Math.PI / 2;
-        this.rotorGroup.add(blade1, blade2);
-
-        const tailGeo = new THREE.BoxGeometry(0.5, 0.5, 4);
-        const tail = new THREE.Mesh(tailGeo, fuseMat);
-        tail.position.set(0, 0, 4);
-        this.group.add(tail);
-
-        this.tailRotorGroup = new THREE.Group();
-        this.tailRotorGroup.position.set(0.3, 0, 5.5);
-        this.group.add(this.tailRotorGroup);
-        
-        const tailBladeGeo = new THREE.BoxGeometry(0.05, 2, 0.2);
-        const tailBlade = new THREE.Mesh(tailBladeGeo, bladeMat);
-        this.tailRotorGroup.add(tailBlade);
+        this.tailGroup = new THREE.Group();
+        this.tailGroup.position.set(0, 0, 4.5);
+        this.group.add(this.tailGroup);
+        const tailBoom = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.8, 4), armyGreen);
+        tailBoom.rotation.x = Math.PI / 2; tailBoom.position.z = 2;
+        this.tailGroup.add(tailBoom);
+        this.tailRotor = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.5, 0.3), darkMetal);
+        this.tailRotor.position.set(0.5, 0, 4);
+        this.tailGroup.add(this.tailRotor);
 
         this.chaseCameraAnchor = new THREE.Object3D();
-        this.chaseCameraAnchor.position.set(0, 10, 20); 
+        this.chaseCameraAnchor.position.set(0, 5, 15);
         this.group.add(this.chaseCameraAnchor);
     }
 
     update(delta, controls, camera) {
         if(this.isDestroyed) {
-            this.body.velocity.y -= 9.82 * delta; // Crash to ground
+            this.rotorGroup.rotation.y *= 0.95;
             if(this.particles) {
-                this.particles.createFire(this.group.position);
-                this.particles.createExhaustSmoke(this.group.position, new THREE.Vector3(0, 2, 0), true);
+                const worldPos = new THREE.Vector3(); this.group.getWorldPosition(worldPos);
+                this.particles.createFire(worldPos);
             }
             return;
         }
-
-        const targetRotorSpeed = this.isOccupied ? 20 : 0;
-        this.rotorRotation += targetRotorSpeed * delta * 5;
-        this.rotorGroup.rotation.y = this.rotorRotation;
-        this.tailRotorGroup.rotation.x = this.rotorRotation * 1.5;
 
         if (!this.isOccupied) {
-            this.body.angularDamping = 0.99;
-            if(this.audio) this.audio.stop('heli_engine');
+            this.body.mass = 0; this.body.type = CANNON.Body.STATIC;
+            this.enginePower = THREE.MathUtils.lerp(this.enginePower, 0, 0.05);
+            this.rotorGroup.rotation.y += this.enginePower * delta * 20;
+            this.tailRotor.rotation.x += this.enginePower * delta * 25;
+            if(this.audio && typeof this.audio.stop === 'function') this.audio.stop('heli_engine');
             return;
         }
 
-        // --- FUEL DEGRADATION ---
-        this.fuel -= delta * 0.2;
-        if(this.fuel <= 0) { this.fuel = 0; }
+        this.body.mass = 5000; this.body.type = CANNON.Body.DYNAMIC;
 
-        // --- VISUAL DAMAGE STATES ---
-        this.damageTimer += delta;
-        if (this.damageTimer > 0.2 && this.health < 60) {
-            if(this.particles) {
-                this.particles.createExhaustSmoke(this.group.position, new THREE.Vector3(0, 2, 0), true);
-                if(this.health < 30) this.particles.createFire(this.group.position);
-            }
-            this.damageTimer = 0;
-        }
-
-        if (this.audio) {
+        const speed = this.body.velocity.length();
+        if(this.audio && typeof this.audio.play === 'function') {
             this.audio.play('heli_engine');
-            const pitchRate = 0.8 + (targetRotorSpeed / 20) * 0.4;
-            this.audio.setPlaybackRate('heli_engine', pitchRate);
+            const pitchRate = 0.5 + (this.enginePower * 0.5) + (speed / 50);
+            if (typeof this.audio.setPlaybackRate === 'function') this.audio.setPlaybackRate('heli_engine', pitchRate);
         }
 
-        this.body.angularDamping = 0.8;
+        if(this.fuel > 0) this.enginePower = THREE.MathUtils.lerp(this.enginePower, 1, 0.02);
+        else this.enginePower = THREE.MathUtils.lerp(this.enginePower, 0, 0.05);
+
+        this.fuel -= delta * 0.2 * this.enginePower;
+
+        this.rotorGroup.rotation.y += this.enginePower * delta * 40;
+        this.tailRotor.rotation.x += this.enginePower * delta * 45;
+
+        const lift = this.enginePower * 25 * 5000; 
+        const gravity = 25 * 5000;
+        let liftForce = gravity; 
+
+        if (controls.forward) { this.pitch = THREE.MathUtils.lerp(this.pitch, 0.4, 0.05); }
+        else if (controls.backward) { this.pitch = THREE.MathUtils.lerp(this.pitch, -0.3, 0.05); }
+        else { this.pitch = THREE.MathUtils.lerp(this.pitch, 0, 0.05); }
+
+        if (controls.left) { this.yaw += delta * 1.5; this.roll = THREE.MathUtils.lerp(this.roll, 0.3, 0.05); }
+        else if (controls.right) { this.yaw -= delta * 1.5; this.roll = THREE.MathUtils.lerp(this.roll, -0.3, 0.05); }
+        else { this.roll = THREE.MathUtils.lerp(this.roll, 0, 0.05); }
+
+        const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch, this.yaw, this.roll, 'YXZ'));
+        this.body.quaternion.copy(quat);
+
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.group.quaternion);
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
-        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.group.quaternion);
+        this.body.applyForce(new CANNON.Vec3(up.x * liftForce, up.y * liftForce, up.z * liftForce), this.body.position);
 
-        const upForce = 9.82 * this.body.mass;
-        let liftFactor = (this.fuel > 0) ? 1.0 : 0;
-        if (controls.jump && this.fuel > 0) liftFactor = 1.6;
-        if (controls.crouch && this.fuel > 0) liftFactor = 0.4;
-        
-        const liftForce = up.clone().multiplyScalar(upForce * liftFactor);
-        this.body.applyForce(new CANNON.Vec3(liftForce.x, liftForce.y, liftForce.z), this.body.position);
-
-        const torqueMult = 8000;
-        if (controls.forward) this.body.applyTorque(new CANNON.Vec3(-right.x * torqueMult, -right.y * torqueMult, -right.z * torqueMult));
-        if (controls.backward) this.body.applyTorque(new CANNON.Vec3(right.x * torqueMult, right.y * torqueMult, right.z * torqueMult));
-        if (controls.left) this.body.applyTorque(new CANNON.Vec3(forward.x * torqueMult, forward.y * torqueMult, forward.z * torqueMult));
-        if (controls.right) this.body.applyTorque(new CANNON.Vec3(-forward.x * torqueMult, -forward.y * torqueMult, -forward.z * torqueMult));
-
-        const camEuler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
-        const bodyEuler = new THREE.Euler().setFromQuaternion(this.group.quaternion, 'YXZ');
-        let yawError = camEuler.y - bodyEuler.y;
-        while (yawError > Math.PI) yawError -= Math.PI * 2;
-        while (yawError < -Math.PI) yawError += Math.PI * 2;
-        this.body.applyTorque(new CANNON.Vec3(0, yawError * 20000, 0));
-
-        this.fireTimer += delta;
-        if (controls.shoot && this.fireTimer >= this.fireRate && this.ammo > 0) {
+        if (controls.shoot && this.ammo > 0) {
             this.fire();
-            this.fireTimer = 0;
         }
     }
 
     fire() {
+        this.fireTimer += 0.016;
+        if (this.fireTimer < 0.1) return;
+        this.fireTimer = 0;
         this.ammo--;
-        if(this.audio) this.audio.play('heli_fire');
-        const tip = this.group.position.clone().add(new THREE.Vector3(0, -0.5, -3).applyQuaternion(this.group.quaternion));
+        if(this.audio && typeof this.audio.play === 'function') this.audio.play('heli_fire', { randomPitch: true });
+        
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
+        const offset = new THREE.Vector3(2, -1, -4).applyQuaternion(this.group.quaternion);
+        const tip = this.group.position.clone().add(offset);
         if(this.particles) this.particles.createMuzzleFlash(tip, dir, false);
-        const bulletMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-        this.scene.add(bulletMesh);
-        const bulletBody = new CANNON.Body({
-            mass: 5, shape: new CANNON.Sphere(0.2),
-            position: new CANNON.Vec3(tip.x, tip.y, tip.z),
-            velocity: new CANNON.Vec3(dir.x * 150, dir.y * 150, dir.z * 150)
-        });
-        this.world.addBody(bulletBody);
-        bulletBody.mesh = bulletMesh;
-        bulletBody.addEventListener('collide', (e) => {
-            VFX.createExplosion(this.scene, this.world, bulletBody.position.clone(), 3, 30, this.audio);
-            setTimeout(() => { if(bulletBody.world) { this.world.removeBody(bulletBody); this.scene.remove(bulletMesh); } }, 20);
-        });
-        setTimeout(() => { if(bulletBody.world) { this.world.removeBody(bulletBody); this.scene.remove(bulletMesh); } }, 3000);
+
+        const ray = new THREE.Raycaster(tip, dir, 0, 300);
+        const intersects = ray.intersectObjects(this.scene.children, true);
+        if (intersects.length > 0) {
+            const hitBody = this.findPhysicsBody(intersects[0].object);
+            if (hitBody && hitBody.onHit) hitBody.onHit(20);
+        }
+    }
+
+    findPhysicsBody(mesh) {
+        let obj = mesh;
+        while(obj) {
+            const body = this.world.bodies.find(b => b.mesh === obj);
+            if(body) return body;
+            obj = obj.parent;
+        }
+        return null;
     }
 }

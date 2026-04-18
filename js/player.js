@@ -129,7 +129,7 @@ export class Player {
             this.currentWeaponIndex = index;
             this.fireTimer = 0;
             this.moveState.ads = false;
-            if(this.audio) this.audio.play('ui_click');
+            if(this.audio && typeof this.audio.play === 'function') this.audio.play('ui_click');
             this.initWeaponVisuals();
         }
     }
@@ -140,13 +140,13 @@ export class Player {
         this.isReloading = true;
         this.reloadTimer = weapon.reloadTime;
         this.moveState.ads = false;
-        if(this.audio) this.audio.play('rifle_cycle');
+        if(this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_cycle');
     }
 
     throwGrenade() {
         if (this.grenades <= 0 || this.isReloading) return;
         this.grenades--;
-        if(this.audio) this.audio.play('ui_click');
+        if(this.audio && typeof this.audio.play === 'function') this.audio.play('ui_click');
         const throwPos = this.camera.position.clone();
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
         dir.y += 0.2; dir.normalize();
@@ -223,7 +223,7 @@ export class Player {
     shoot() {
         if (this.isReloading) return;
         const weapon = this.weapons[this.currentWeaponIndex];
-        if (weapon.ammo <= 0) { if(this.audio) this.audio.play('ui_click'); return; }
+        if (weapon.ammo <= 0) { if(this.audio && typeof this.audio.play === 'function') this.audio.play('ui_click'); return; }
         weapon.ammo--;
         
         // Procedural recoil kick
@@ -232,13 +232,13 @@ export class Player {
         this.gunGroup.rotation.x += recoilAmount * 0.5;
         
         if (weapon.name === 'M1 Garand' && weapon.ammo === 0) {
-            if(this.audio) {
+            if(this.audio && typeof this.audio.play === 'function') {
                 this.audio.play('rifle_fire', { randomPitch: true });
                 setTimeout(() => this.audio.play('ui_click'), 100); 
             }
-        } else if(this.audio) {
+        } else if(this.audio && typeof this.audio.play === 'function') {
             this.audio.play('rifle_fire', { randomPitch: true });
-            if (weapon.type === 'bolt') { setTimeout(() => { this.audio.play('rifle_cycle'); }, 500); }
+            if (weapon.type === 'bolt') { setTimeout(() => { if(this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_cycle'); }, 500); }
         }
         if(this.particles) {
             const muzzleWorldPos = new THREE.Vector3();
@@ -288,7 +288,7 @@ export class Player {
                 weapon.ammo += transfer;
                 weapon.reserve -= transfer;
                 this.isReloading = false;
-                if(this.audio) this.audio.play('rifle_cycle');
+                if(this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_cycle');
             }
         }
 

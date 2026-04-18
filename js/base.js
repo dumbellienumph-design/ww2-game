@@ -91,7 +91,7 @@ export class Base {
                 this.group.remove(crate);
                 this.world.removeBody(body);
                 if (this.particles) this.particles.createDebris(crate.getWorldPosition(new THREE.Vector3()), 0x4d2a15, 15);
-                if (this.audio) this.audio.play('ui_click');
+                if (this.audio && typeof this.audio.play === 'function') this.audio.play('ui_click');
             }
         };
 
@@ -114,7 +114,7 @@ export class Base {
                 this.group.remove(barrel);
                 this.world.removeBody(body);
                 if (this.particles) this.particles.createDebris(barrel.getWorldPosition(new THREE.Vector3()), 0x222222, 10);
-                if (this.audio) this.audio.play('explosion_debris');
+                if (this.audio && typeof this.audio.play === 'function') this.audio.play('explosion_debris');
             }
         };
 
@@ -276,7 +276,7 @@ export class Base {
         const gh = new THREE.Group(); gh.position.set(-6, 0, 0); gateGroup.add(gh);
         const house = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), this.whiteWoodMat); house.position.y = 1.5; gh.add(house);
         const roof = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.4, 3.4), this.darkGreenMat); roof.position.y = 3.2; gh.add(roof);
-        const winMat = new THREE.MeshStandardMaterial({ color: 0x050505, metalness: 0.9, roughness: 0.1 });
+        const winMat = new THREE.MeshStandardMaterial({ color: 0x050510, metalness: 0.9, roughness: 0.1 });
         const wFront = new THREE.Mesh(new THREE.PlaneGeometry(2, 1.5), winMat); wFront.position.set(0, 1.8, 1.51); gh.add(wFront);
         const wLeft = new THREE.Mesh(new THREE.PlaneGeometry(2, 1.5), winMat); wLeft.position.set(-1.51, 1.8, 0); wLeft.rotation.y = -Math.PI/2; gh.add(wLeft);
         const wRight = new THREE.Mesh(new THREE.PlaneGeometry(2, 1.5), winMat); wRight.position.set(1.51, 1.8, 0); wRight.rotation.y = Math.PI/2; gh.add(wRight);
@@ -347,7 +347,10 @@ export class Base {
     createSignalCenter(x, y, z) {
         const scGroup = new THREE.Group(); scGroup.position.set(x, y, z); this.group.add(scGroup);
         const bunker = new THREE.Mesh(new THREE.BoxGeometry(8, 4, 10), this.formworkConcreteMat); bunker.position.set(-5, 2, 0); scGroup.add(bunker);
-        if(this.audio) { this.audio.createPositionalSource('base_hum', bunker); this.audio.play('base_hum'); }
+        if(this.audio && typeof this.audio.createPositionalSource === 'function') { 
+            this.audio.createPositionalSource('base_hum', bunker); 
+            this.audio.play('base_hum'); 
+        }
         const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), this.metalMat); door.position.set(-5, 1.1, 5.1); scGroup.add(door);
         const towerHeight = 25; const towerGroup = new THREE.Group(); towerGroup.position.set(8, 0, 0); scGroup.add(towerGroup);
         const towerSkeleton = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 3, towerHeight, 4), this.steelLatticeMat); towerSkeleton.position.y = towerHeight / 2; towerGroup.add(towerSkeleton);
