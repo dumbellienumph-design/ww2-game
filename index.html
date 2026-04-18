@@ -21,6 +21,13 @@
 
     <!-- 2. GAME UI -->
     <div id="ui-layer">
+        <div id="command-menu">
+            <h3 style="margin-top:0">SQUAD COMMANDS</h3>
+            <button class="command-btn" onclick="window.game.setSquadOrder('ADVANCE')">1: ADVANCE TO POINT</button>
+            <button class="command-btn" onclick="window.game.setSquadOrder('HOLD')">2: HOLD POSITION</button>
+            <button class="command-btn" onclick="window.game.setSquadOrder('REGROUP')">3: REGROUP ON ME</button>
+            <p style="font-size:0.7rem; margin-top:10px">RELEASE V TO CANCEL</p>
+        </div>
         <div id="kill-feed"></div>
         <div id="tactical-notify"></div>
         <div id="game-ui">

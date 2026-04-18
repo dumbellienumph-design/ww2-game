@@ -38,6 +38,7 @@ class GameUI {
 
 class Game {
     constructor() {
+        window.game = this; // Global access for UI buttons
         this.canvas = document.querySelector('#game-canvas');
         this.renderer = new THREE.WebGLRenderer({ 
             canvas: this.canvas, 
@@ -72,13 +73,24 @@ class Game {
         this.activeVehicle = null;
 
         this.initWorld();
+        this.initUI();
         
+        window.addEventListener('resize', () => this.onWindowResize());
+        this.clock = new THREE.Clock();
+        this.animate();
+
+        GameUI.notify("MISSION STARTED: SECURE THE SECTOR", "#ff0");
+    }
+
+    initUI() {
+        // Pointer Lock on click
         document.addEventListener('mousedown', () => {
             if (!this.isGameOver && !document.pointerLockElement) {
                 try { this.player.requestPointerLock(); } catch (e) {}
             }
         });
 
+        // ESC Menu
         const btnResume = document.getElementById('btn-resume');
         if (btnResume) {
             btnResume.addEventListener('click', () => {
@@ -86,12 +98,37 @@ class Game {
                 this.player.requestPointerLock();
             });
         }
-        
-        window.addEventListener('resize', () => this.onWindowResize());
-        this.clock = new THREE.Clock();
-        this.animate();
 
-        GameUI.notify("MISSION STARTED: SECURE THE SECTOR", "#ff0");
+        // --- COMMAND SYSTEM INPUTS ---
+        const commandMenu = document.getElementById('command-menu');
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyV') {
+                commandMenu.classList.add('active');
+                document.exitPointerLock();
+            }
+            if (commandMenu.classList.contains('active')) {
+                if (e.code === 'Digit1') this.setSquadOrder('ADVANCE');
+                if (e.code === 'Digit2') this.setSquadOrder('HOLD');
+                if (e.code === 'Digit3') this.setSquadOrder('REGROUP');
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'KeyV') {
+                commandMenu.classList.remove('active');
+                if (this.isLoaded) this.player.requestPointerLock();
+            }
+        });
+    }
+
+    setSquadOrder(order) {
+        GameUI.notify(`SQUAD ORDER: ${order}`, "#ff0");
+        this.allies.forEach(ally => {
+            if (typeof ally.setOrder === 'function') {
+                ally.setOrder(order, this.player.body.position);
+            }
+        });
+        document.getElementById('command-menu').classList.remove('active');
+        this.player.requestPointerLock();
     }
 
     initWorld() {
@@ -121,6 +158,7 @@ class Game {
         this.spawnEnemies(15); 
         this.spawnAllies(5);
         this.initMinimap();
+        this.isLoaded = true;
     }
 
     initLights() {

@@ -47,15 +47,24 @@ export class Ally {
 
         const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.3), oliveDrab);
         torso.position.y = 0.4;
+        torso.castShadow = true;
+        torso.receiveShadow = true;
         this.visualGroup.add(torso);
 
         const helmet = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.2), tan);
         helmet.position.y = 1.1;
+        helmet.castShadow = true;
         this.visualGroup.add(helmet);
 
         const gun = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.9), new THREE.MeshStandardMaterial({color: 0x111111}));
         gun.position.set(0.3, 0.4, -0.4);
         this.visualGroup.add(gun);
+    }
+
+    setOrder(order, playerPos) {
+        if (this.isDead) return;
+        this.order = order;
+        this.state = order.toLowerCase(); // Map to internal states
     }
 
     takeDamage(amount) {
@@ -88,17 +97,47 @@ export class Ally {
             if (d < minDist) { minDist = d; nearestEnemy = e; }
         });
 
-        if (nearestEnemy) this.state = 'combat';
-        else {
-            const nearObjective = objectives.find(o => currentPos.distanceTo(o.position) < 25);
-            if (nearObjective && distToPlayer > 30) this.state = 'defend';
-            else this.state = 'follow';
-        }
-
         const moveDir = new THREE.Vector3();
         
-        if (this.state === 'follow') {
-            if (distToPlayer > 6) {
+        // Handle Orders
+        if (this.state === 'hold') {
+            this.body.velocity.set(0, this.body.velocity.y, 0);
+            if (nearestEnemy && minDist < 50) this.shoot(nearestEnemy);
+            return;
+        }
+
+        if (nearestEnemy && minDist < 40) {
+            this.group.lookAt(nearestEnemy.group.position.x, this.group.position.y, nearestEnemy.group.position.z);
+            this.body.velocity.set(0, this.body.velocity.y, 0);
+            this.fireTimer += delta;
+            if (this.fireTimer >= this.fireRate) {
+                this.shoot(nearestEnemy);
+                this.fireTimer = 0;
+            }
+        } 
+        else if (this.state === 'regroup') {
+            if (distToPlayer > 4) {
+                moveDir.subVectors(playerPos, currentPos).normalize();
+                this.body.velocity.x = moveDir.x * this.speed;
+                this.body.velocity.z = moveDir.z * this.speed;
+                this.group.lookAt(playerPos.x, this.group.position.y, playerPos.z);
+            } else {
+                this.state = 'follow';
+            }
+        }
+        else if (this.state === 'advance') {
+            // Rush toward ABLE objective as a default advance point
+            const target = objectives[0].position;
+            const distToTarget = currentPos.distanceTo(target);
+            if (distToTarget > 5) {
+                moveDir.subVectors(target, currentPos).normalize();
+                this.body.velocity.x = moveDir.x * this.speed;
+                this.body.velocity.z = moveDir.z * this.speed;
+                this.group.lookAt(target.x, this.group.position.y, target.z);
+            }
+        }
+        else if (this.state === 'follow') {
+            if (distToPlayer > 8) {
                 moveDir.subVectors(playerPos, currentPos).normalize();
                 this.body.velocity.x = moveDir.x * this.speed;
                 this.body.velocity.z = moveDir.z * this.speed;
@@ -106,19 +145,6 @@ export class Ally {
             } else {
                 this.body.velocity.set(0, this.body.velocity.y, 0);
             }
-        } 
-        else if (this.state === 'combat' && nearestEnemy) {
-            this.group.lookAt(nearestEnemy.group.position.x, this.group.position.y, nearestEnemy.group.position.z);
-            this.body.velocity.set(0, this.body.velocity.y, 0);
-            
-            this.fireTimer += delta;
-            if (this.fireTimer >= this.fireRate) {
-                this.shoot(nearestEnemy);
-                this.fireTimer = 0;
-            }
-        }
-        else if (this.state === 'defend') {
-            this.body.velocity.set(0, this.body.velocity.y, 0);
         }
     }
 
@@ -138,7 +164,7 @@ export class Ally {
             if (Date.now() - startTime > 2000 || this.isDead) { this.scene.remove(bullet); return; }
             bullet.position.add(dir.clone().multiplyScalar(1.5));
             
-            if (bullet.position.distanceTo(target.group.position) < 1.0) {
+            if (bullet.position.distanceTo(target.group.position) < 1.5) {
                 target.takeDamage(20);
                 this.scene.remove(bullet);
                 return;

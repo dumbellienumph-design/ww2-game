@@ -380,4 +380,41 @@ button:hover {
     100% { transform: translateY(-50px); opacity: 0; }
 }
 
+/* --- SQUAD COMMAND MENU --- */
+#command-menu {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    flex-direction: column;
+    gap: 15px;
+    background: rgba(0, 20, 0, 0.8);
+    padding: 2rem;
+    border: 2px solid #ff0;
+    z-index: 70;
+    text-align: center;
+}
+
+#command-menu.active {
+    display: flex;
+}
+
+.command-btn {
+    background: #000;
+    border: 1px solid #ff0;
+    color: #ff0;
+    padding: 10px 20px;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+
+.command-btn:hover {
+    background: #ff0;
+    color: #000;
+}
+
+
 
