@@ -12,6 +12,8 @@ export class Player {
         
         this.baseFOV = 75;
         this.camera = new THREE.PerspectiveCamera(this.baseFOV, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // FPS standard: YXZ order prevents world flipping
+        this.camera.rotation.order = 'YXZ';
         this.camera.layers.enable(1); 
 
         this.walkSpeed = 8;
@@ -51,12 +53,15 @@ export class Player {
         this.isReloading = false;
         this.adsFactor = 0;
         
-        // --- STANCE & PROCEDURAL ANIMATION ---
         this.currentHeight = 0.7; 
         this.leanAngle = 0;
         this.leanOffset = 0;
         this.bobTimer = 0;
         this.sway = new THREE.Vector3(0,0,0);
+
+        // Rotation tracking (in radians)
+        this.pitch = 0;
+        this.yaw = 0;
 
         this.initPhysics();
         this.initControls();
@@ -83,20 +88,22 @@ export class Player {
     }
 
     initControls() {
-        this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === this.domElement) {
                 const sensitivity = this.moveState.ads ? 0.001 : 0.002;
-                this.euler.y -= e.movementX * sensitivity;
-                this.euler.x -= e.movementY * sensitivity;
-                this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
-                this.camera.quaternion.setFromEuler(this.euler);
                 
-                // Add weapon sway based on mouse movement
+                // standard mouse look
+                this.yaw -= e.movementX * sensitivity;
+                this.pitch -= e.movementY * sensitivity;
+                
+                // clamp pitch to avoid flipping over
+                this.pitch = Math.max(-Math.PI / 2.1, Math.min(Math.PI / 2.1, this.pitch));
+                
                 this.sway.x = -e.movementX * 0.0003;
                 this.sway.y = e.movementY * 0.0003;
             }
         });
+
         document.addEventListener('keydown', (e) => {
             this.onKey(e.code, true);
             if(e.code === 'Digit1') this.switchWeapon(0);
@@ -104,7 +111,6 @@ export class Player {
             if(e.code === 'Digit3') this.switchWeapon(2);
             if(e.code === 'KeyR') this.reload();
             if(e.code === 'KeyG') this.throwGrenade();
-            
             if(e.code === 'KeyZ') this.moveState.prone = !this.moveState.prone;
             if(e.code === 'KeyC') this.moveState.crouch = !this.moveState.crouch;
         });
@@ -129,7 +135,6 @@ export class Player {
             this.currentWeaponIndex = index;
             this.fireTimer = 0;
             this.moveState.ads = false;
-            if(this.audio && typeof this.audio.play === 'function') this.audio.play('ui_click');
             this.initWeaponVisuals();
         }
     }
@@ -140,13 +145,11 @@ export class Player {
         this.isReloading = true;
         this.reloadTimer = weapon.reloadTime;
         this.moveState.ads = false;
-        if(this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_cycle');
     }
 
     throwGrenade() {
         if (this.grenades <= 0 || this.isReloading) return;
         this.grenades--;
-        if(this.audio && typeof this.audio.play === 'function') this.audio.play('ui_click');
         const throwPos = this.camera.position.clone();
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
         dir.y += 0.2; dir.normalize();
@@ -203,7 +206,7 @@ export class Player {
         this.health -= amount;
         if (this.health <= 0) {
             this.health = 0;
-            this.body.position.set(-50, 5, -50);
+            this.body.position.set(-50, 5, -5);
             this.health = 100;
         }
     }
@@ -223,23 +226,13 @@ export class Player {
     shoot() {
         if (this.isReloading) return;
         const weapon = this.weapons[this.currentWeaponIndex];
-        if (weapon.ammo <= 0) { if(this.audio && typeof this.audio.play === 'function') this.audio.play('ui_click'); return; }
+        if (weapon.ammo <= 0) { return; }
         weapon.ammo--;
         
-        // Procedural recoil kick
         const recoilAmount = this.moveState.ads ? 0.02 : 0.05;
         this.gunGroup.position.z += recoilAmount;
         this.gunGroup.rotation.x += recoilAmount * 0.5;
         
-        if (weapon.name === 'M1 Garand' && weapon.ammo === 0) {
-            if(this.audio && typeof this.audio.play === 'function') {
-                this.audio.play('rifle_fire', { randomPitch: true });
-                setTimeout(() => this.audio.play('ui_click'), 100); 
-            }
-        } else if(this.audio && typeof this.audio.play === 'function') {
-            this.audio.play('rifle_fire', { randomPitch: true });
-            if (weapon.type === 'bolt') { setTimeout(() => { if(this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_cycle'); }, 500); }
-        }
         if(this.particles) {
             const muzzleWorldPos = new THREE.Vector3();
             this.muzzle.getWorldPosition(muzzleWorldPos);
@@ -288,7 +281,6 @@ export class Player {
                 weapon.ammo += transfer;
                 weapon.reserve -= transfer;
                 this.isReloading = false;
-                if(this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_cycle');
             }
         }
 
@@ -297,8 +289,8 @@ export class Player {
             if (g.isExploded) this.grenadeList.splice(i, 1);
         });
 
-        // --- STANCE LOGIC ---
-        let targetHeight = 0.7; // Stand
+        // STANCE
+        let targetHeight = 0.7; 
         let speedMult = 1.0;
         if (this.moveState.prone) {
             targetHeight = -0.2;
@@ -310,19 +302,22 @@ export class Player {
         }
         this.currentHeight = THREE.MathUtils.lerp(this.currentHeight, targetHeight, 0.1);
 
-        // LEANING LOGIC
+        // LEANING
         let targetLeanAngle = 0;
         let targetLeanOffset = 0;
         if (this.moveState.leanLeft) { targetLeanAngle = 0.2; targetLeanOffset = -0.4; }
         else if (this.moveState.leanRight) { targetLeanAngle = -0.2; targetLeanOffset = 0.4; }
-        
         this.leanAngle = THREE.MathUtils.lerp(this.leanAngle, targetLeanAngle, 0.1);
         this.leanOffset = THREE.MathUtils.lerp(this.leanOffset, targetLeanOffset, 0.1);
 
         const targetAdsFactor = this.moveState.ads ? 1.0 : 0;
         this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
 
-        // Calculate Movement Direction
+        // --- CAMERA ROTATION (PROPER FPS) ---
+        // Apply pitch/yaw/lean in one pass
+        this.camera.rotation.set(this.pitch, this.yaw, this.leanAngle);
+
+        // MOVEMENT
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
         forward.y = 0; forward.normalize();
         const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -352,13 +347,12 @@ export class Player {
             this.canJump = false;
         }
 
-        // --- PROCEDURAL ANIMATION: Sway & Bobbing ---
-        this.sway.lerp(new THREE.Vector3(0,0,0), 0.1); // Recover sway
-        
+        // SWAY & BOB
+        this.sway.lerp(new THREE.Vector3(0,0,0), 0.1); 
         if (currentSpeed > 0 && !this.moveState.jump) {
             this.bobTimer += delta * currentSpeed * 1.2;
         } else {
-            this.bobTimer += delta * 2.0; // Idle breathing
+            this.bobTimer += delta * 2.0; 
         }
         
         const bobOffset = Math.sin(this.bobTimer) * (currentSpeed > 0 ? 0.04 : 0.01) * (1 - this.adsFactor * 0.8);
@@ -367,7 +361,6 @@ export class Player {
         const hipPos = new THREE.Vector3(0.3 + this.sway.x + bobSide, -0.3 + this.sway.y + Math.abs(bobOffset), -0.5);
         const adsPos = new THREE.Vector3(0 + this.sway.x * 0.1, -0.12 + this.sway.y * 0.1, -0.3);
         
-        // Recover recoil rotation
         this.gunGroup.rotation.x = THREE.MathUtils.lerp(this.gunGroup.rotation.x, 0, 0.1);
 
         if (this.isReloading) {
@@ -382,14 +375,12 @@ export class Player {
             this.camera.updateProjectionMatrix();
         }
 
-        // Apply Stance & Lean to Camera
+        // Position Camera
         this.camera.position.x = this.body.position.x;
         this.camera.position.y = this.body.position.y + this.currentHeight + bobOffset;
         this.camera.position.z = this.body.position.z;
         
         const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
         this.camera.position.add(camRight.multiplyScalar(this.leanOffset));
-        
-        this.camera.rotation.z = this.leanAngle;
     }
 }
