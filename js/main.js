@@ -8,7 +8,6 @@ import { Ally } from './ally.js';
 import { Terrain } from './terrain.js';
 import { Vegetation } from './vegetation.js';
 import { Base } from './base.js';
-import { AudioManager } from './audio.js';
 import { Objective } from './objective.js';
 import { ParticleSystem } from './particles.js';
 
@@ -23,10 +22,9 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         this.minimapCanvas = document.querySelector('#minimap-canvas');
-        this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas, antialias: true });
+        this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas });
         this.minimapRenderer.setSize(220, 220);
 
         this.scene = new THREE.Scene();
@@ -36,18 +34,14 @@ class Game {
         this.timeOfDay = 0;
         this.daySpeed = 0.05;
 
-        this.tempCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.tempCamera.position.set(0, 50, 100);
-        this.tempCamera.lookAt(0, 0, 0);
-        
-        this.audio = new AudioManager(this.tempCamera);
         this.isLoaded = false;
         this.isGameOver = false;
         this.isPlayerActive = false; 
 
         this.activeRadius = 200; 
-        this.cullingTimer = 0;
         
+        // --- 1. INSTANT INIT (NO AWAIT) ---
+        this.initWorld();
         this.initUI();
         
         window.addEventListener('resize', () => this.onWindowResize());
@@ -56,20 +50,14 @@ class Game {
     }
 
     initUI() {
-        const homeScreen = document.getElementById('home-screen');
-        const btnBegin = document.getElementById('btn-begin');
+        const startOverlay = document.getElementById('start-overlay');
+        const btnStart = document.getElementById('btn-start');
 
-        btnBegin.addEventListener('click', async () => {
-            btnBegin.disabled = true;
-            btnBegin.innerText = "DEPLOYING...";
-            
-            this.audio.startAudioContext();
-            
-            // Start loading world immediately
-            await this.loadAndDeploy();
-            
-            homeScreen.classList.add('hidden');
+        btnStart.addEventListener('click', () => {
+            startOverlay.classList.add('hidden');
             document.getElementById('ui-layer').classList.remove('hidden');
+            try { this.player.requestPointerLock(); } catch (e) {}
+            this.isLoaded = true;
         });
 
         const btnResume = document.getElementById('btn-resume');
@@ -81,8 +69,8 @@ class Game {
         }
     }
 
-    async loadAndDeploy() {
-        // --- 1. CORE WORLD (Await this only) ---
+    initWorld() {
+        // Build everything immediately
         this.terrain = new Terrain(this.scene, this.world);
         this.initLights();
         this.initPhysicsMaterial();
@@ -90,49 +78,23 @@ class Game {
         this.particles = new ParticleSystem(this.scene);
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
         this.player.body.position.set(-50, 5, -50); 
-        this.player.audio = this.audio;
-        
-        // Setup listener
-        this.audio.listener.parent.remove(this.audio.listener);
-        this.player.camera.add(this.audio.listener);
 
-        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
+        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, null, this.particles);
         this.objectives = [
-            new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio),
-            new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio),
-            new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, this.audio)
+            new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, null),
+            new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, null),
+            new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, null)
         ];
         
         this.tanks = [
-            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
-            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 }, this.audio, this.particles)    
+            new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, null, this.particles), 
+            new Tank(this.scene, this.world, { x: 0, y: 5, z: -80 }, null, this.particles)    
         ];
-        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
+        this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, null, this.particles)];
         
         this.spawnEnemies(15); 
         this.spawnAllies(5);
         this.initMinimap();
-
-        // --- 2. START THE GAME IMMEDIATELY ---
-        try { this.player.requestPointerLock(); } catch (e) {}
-        this.isLoaded = true;
-
-        // --- 3. LOAD AUDIO IN BACKGROUND (Do not await) ---
-        const soundAssets = [
-            ['anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5],
-            ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
-            ['rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8],
-            ['tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6],
-            ['explosion_blast', 'https://cdn.freesound.org/previews/103/103213_746654-lq.mp3', false, false, 0.9],
-            ['ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3]
-        ];
-
-        soundAssets.forEach(s => {
-            this.audio.loadSound(...s).then(() => {
-                if (s[0] === 'action_theme') this.audio.play('action_theme');
-                if (s[0] === 'ambient_wind') this.audio.play('ambient_wind');
-            });
-        });
     }
 
     initLights() {
@@ -153,13 +115,13 @@ class Game {
     }
 
     spawnEnemies(count) {
-        this.enemies = this.enemies || [];
+        this.enemies = [];
         for(let i=0; i<count; i++) {
             let x, z;
             do { x = (Math.random() - 0.5) * 800; z = (Math.random() - 0.5) * 800; } 
             while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 300); 
             let type = (Math.random() > 0.85 ? 'tank' : 'infantry');
-            const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, this.audio, type);
+            const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, null, type);
             const iconColor = type === 'tank' ? 0xffaa00 : 0xff0000;
             const icon = new THREE.Mesh(new THREE.CircleGeometry(type === 'tank' ? 6 : 3, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
@@ -168,10 +130,10 @@ class Game {
     }
 
     spawnAllies(count) {
-        this.allies = this.allies || [];
+        this.allies = [];
         for(let i=0; i<count; i++) {
             const x = -40 + (Math.random() - 0.5) * 20; const z = -40 + (Math.random() - 0.5) * 20;
-            const ally = new Ally(this.scene, this.world, { x, y: 5, z }, this.audio);
+            const ally = new Ally(this.scene, this.world, { x, y: 5, z }, null);
             const icon = new THREE.Mesh(new THREE.CircleGeometry(2, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
             ally.minimapIcon = icon; this.allies.push(ally);
@@ -189,51 +151,11 @@ class Game {
     }
 
     onWindowResize() {
-        if (this.isLoaded) {
+        if (this.player) {
             this.player.camera.aspect = window.innerWidth / window.innerHeight;
             this.player.camera.updateProjectionMatrix();
-        } else {
-            this.tempCamera.aspect = window.innerWidth / window.innerHeight;
-            this.tempCamera.updateProjectionMatrix();
         }
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    updateEnvironment(delta) {
-        this.timeOfDay += delta * 0.05;
-        const sunX = Math.cos(this.timeOfDay) * 200;
-        const sunY = Math.sin(this.timeOfDay) * 200;
-        this.sunLight.position.set(sunX, sunY, 50);
-        const dayFactor = Math.max(0, Math.min(1, sunY / 50));
-        this.sunLight.intensity = dayFactor * 0.8;
-        this.ambientLight.intensity = 0.1 + (dayFactor * 0.3);
-        const dayColor = new THREE.Color(0x8899a6);
-        const nightColor = new THREE.Color(0x050510);
-        const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
-        this.scene.background = currentColor;
-        if (this.scene.fog) this.scene.fog.color = currentColor;
-    }
-
-    updateCulling() {
-        if (!this.player || !this.isLoaded) return;
-        const playerPos = this.player.body.position;
-
-        if (this.vegetation && this.vegetation.objects) {
-            this.vegetation.objects.forEach(obj => {
-                const distSq = playerPos.distanceSquared(obj.body.position);
-                const shouldBeActive = distSq < this.activeRadius * this.activeRadius;
-
-                if (shouldBeActive && !obj.active) {
-                    this.scene.add(obj.mesh);
-                    this.world.addBody(obj.body);
-                    obj.active = true;
-                } else if (!shouldBeActive && obj.active) {
-                    this.scene.remove(obj.mesh);
-                    this.world.removeBody(obj.body);
-                    obj.active = false;
-                }
-            });
-        }
     }
 
     animate() {
@@ -241,25 +163,15 @@ class Game {
         requestAnimationFrame(() => this.animate());
         const delta = this.clock.getDelta();
 
-        if (!this.isLoaded) {
-            this.renderer.render(this.scene, this.tempCamera);
-            return;
-        }
+        if (!this.isLoaded) return;
 
         if (!this.isPlayerActive) {
             const vel = this.player.body.velocity;
             if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true;
         }
 
-        this.cullingTimer += delta;
-        if (this.cullingTimer > 0.5) { 
-            this.updateCulling();
-            this.cullingTimer = 0;
-        }
-
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
-        this.updateEnvironment(delta);
         this.particles.update(delta, this.player.camera);
         
         this.objectives.forEach(obj => obj.update(delta, [this.player, ...this.allies], this.enemies));
@@ -269,7 +181,6 @@ class Game {
         if (alliedPoints > enemyPoints) this.enemyTickets -= (alliedPoints - enemyPoints) * delta * 2;
         if (this.alliedTickets <= 0 || this.enemyTickets <= 0) this.endGame();
 
-        this.audio.updateAltitudeEffects(this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y);
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
         
         if (this.activeVehicle) {
