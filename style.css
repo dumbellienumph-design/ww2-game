@@ -3,7 +3,7 @@ body {
     overflow: hidden;
     background: #000;
     font-family: 'Courier New', Courier, monospace;
-    color: #ff8800;
+    color: #0f0;
 }
 
 #game-canvas {
@@ -45,7 +45,7 @@ body {
 h1 {
     font-size: 4rem;
     margin-bottom: 2rem;
-    text-shadow: 0 0 10px #ff8800;
+    text-shadow: 0 0 10px #0f0;
     letter-spacing: 5px;
 }
 
@@ -53,8 +53,8 @@ h1 {
     text-align: center;
     margin-bottom: 2rem;
     padding: 1rem;
-    border-top: 1px solid #ff8800;
-    border-bottom: 1px solid #ff8800;
+    border-top: 1px solid #0f0;
+    border-bottom: 1px solid #0f0;
 }
 
 .mission-brief h3 {
@@ -70,8 +70,8 @@ h1 {
 
 button {
     background: transparent;
-    border: 2px solid #ff8800;
-    color: #ff8800;
+    border: 2px solid #0f0;
+    color: #0f0;
     padding: 1rem 2rem;
     font-size: 1.5rem;
     cursor: pointer;
@@ -80,9 +80,9 @@ button {
 }
 
 button:hover {
-    background: #ff8800;
+    background: #0f0;
     color: #000;
-    box-shadow: 0 0 20px #ff8800;
+    box-shadow: 0 0 20px #0f0;
 }
 
 .hint {
@@ -114,11 +114,11 @@ button:hover {
     right: 2rem;
     width: 200px;
     height: 200px;
-    border: 3px solid #ff8800;
+    border: 3px solid #0f0;
     background: #000;
     border-radius: 50%;
     overflow: hidden;
-    box-shadow: 0 0 15px #ff8800;
+    box-shadow: 0 0 15px #0f0;
     pointer-events: none;
     z-index: 20;
 }
