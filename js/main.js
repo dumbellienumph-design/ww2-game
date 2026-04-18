@@ -145,7 +145,7 @@ class Game {
     spawnAllies(count) {
         for(let i=0; i<count; i++) {
             const x = -40 + (Math.random() - 0.5) * 40; const z = -40 + (Math.random() - 0.5) * 40;
-            const ally = new Ally(this.scene, this.world, { x, y: 5, z });
+            const ally = new Ally(this.scene, this.world, { x, y: 5, z }, this.audio);
             const icon = new THREE.Mesh(new THREE.CircleGeometry(2, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
             ally.minimapIcon = icon; this.allies.push(ally);
@@ -259,7 +259,6 @@ class Game {
             }
             this.player.body.position.copy(this.activeVehicle.body.position);
 
-            // --- REPAIR/REFUEL LOGIC (Near BAKER point) ---
             const baker = this.objectives.find(o => o.name === 'BAKER');
             if(this.activeVehicle.body.position.distanceTo(baker.position) < 20) {
                 this.activeVehicle.health = Math.min(this.activeVehicle.maxHealth, this.activeVehicle.health + delta * 20);
@@ -270,17 +269,29 @@ class Game {
         } else { this.player.update(delta, this.terrain); }
 
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
+        
+        // --- 7.1 ALLY UPDATE ---
+        this.allies.forEach(ally => {
+            ally.update(delta, playerPos, this.enemies, this.objectives);
+            if(ally.minimapIcon) {
+                ally.minimapIcon.position.set(ally.body.position.x, 100, ally.body.position.z);
+                if(ally.isDead) this.scene.remove(ally.minimapIcon);
+            }
+        });
+
         this.enemies.forEach((enemy) => {
             enemy.update(delta, playerPos, this.player);
             if (enemy.minimapIcon) enemy.minimapIcon.position.set(enemy.body.position.x, 100, enemy.body.position.z);
             if (enemy.isDead && enemy.minimapIcon) { this.scene.remove(enemy.minimapIcon); enemy.minimapIcon = null; }
         });
 
-        // --- HUD: ENHANCED FOR VEHICLE STATS ---
         document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
         let ammoText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
         if (this.activeVehicle) {
             ammoText += ` | VEHICLE: HP ${Math.ceil(this.activeVehicle.health)} FUEL ${Math.ceil(this.activeVehicle.fuel)}% AMMO ${this.activeVehicle.ammo}`;
+        } else {
+            const w = this.player.weapons[this.player.currentWeaponIndex];
+            ammoText += ` | AMMO: ${w.ammo}/${w.reserve} | GRENADES: ${this.player.grenades}`;
         }
         document.getElementById('ammo').innerText = ammoText;
         
