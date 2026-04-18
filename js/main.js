@@ -9,6 +9,7 @@ import { Terrain } from './terrain.js';
 import { Vegetation } from './vegetation.js';
 import { Base } from './base.js';
 import { AudioManager } from './audio.js';
+import { Objective } from './objective.js';
 
 class Game {
     constructor() {
@@ -55,13 +56,21 @@ class Game {
         this.allies = [];
         this.activeVehicle = null;
 
-        // --- WAVE SYSTEM ---
+        // --- MISSION SYSTEM ---
         this.waveTimer = 0;
-        this.waveInterval = 60; // Every 60 seconds
-        this.enemiesPerWave = 6;
+        this.waveInterval = 60;
+        this.alliedTickets = 500;
+        this.enemyTickets = 500;
+        this.isGameOver = false;
+
+        this.objectives = [
+            new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio), // Control Tower
+            new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio), // Motor Pool
+            new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, this.audio) // Water Tower
+        ];
 
         this.initMinimap();
-        this.spawnEnemies(12); // Initial force
+        this.spawnEnemies(12);
         this.spawnAllies(5);
         this.initUI();
         
@@ -86,36 +95,19 @@ class Game {
         await this.audio.loadSound('explosion_debris', 'https://cdn.freesound.org/previews/563/563148_1066060-lq.mp3', false, false, 0.6);
         await this.audio.loadSound('base_hum', 'https://cdn.freesound.org/previews/212/212134_4083377-lq.mp3', true, true, 0.3);
         await this.audio.loadSound('ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3);
-        
-        // --- REINFORCEMENT SOUND (Siren/Truck) ---
         await this.audio.loadSound('reinforcement', 'https://cdn.freesound.org/previews/369/369932_6081467-lq.mp3', false, false, 0.7);
     }
 
     spawnReinforcements() {
-        console.log("REINFORCEMENTS ARRIVING!");
         this.audio.play('reinforcement');
-        
-        // Spawn 5 infantry + 1 heavy unit
-        this.spawnEnemies(5, 'infantry');
-        this.spawnEnemies(1, Math.random() > 0.5 ? 'tank' : 'aa_flak');
-
-        // Notification
-        const notify = document.createElement('div');
-        notify.style.position = 'fixed'; notify.style.top = '20%'; notify.style.left = '50%';
-        notify.style.transform = 'translate(-50%, -50%)'; notify.style.color = '#ff0000';
-        notify.style.fontSize = '24px'; notify.style.fontWeight = 'bold'; notify.style.fontFamily = 'Courier New';
-        notify.innerText = "CRITICAL: ENEMY REINFORCEMENTS DETECTED";
-        document.body.appendChild(notify);
-        setTimeout(() => document.body.removeChild(notify), 5000);
+        this.spawnEnemies(6);
     }
 
     spawnEnemies(count, forceType = null) {
         for(let i=0; i<count; i++) {
             let x, z;
-            // Reinforcements spawn at the extreme edges
             do { x = (Math.random() - 0.5) * 800; z = (Math.random() - 0.5) * 800; } 
             while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 200);
-            
             let type = forceType;
             if (!type) {
                 const rand = Math.random();
@@ -123,13 +115,10 @@ class Game {
                 else if (rand > 0.70) type = 'aa_flak';
                 else type = 'infantry';
             }
-
             const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, this.audio, type);
-            
             let iconColor = 0xff0000; let iconSize = 3;
             if (type === 'tank') { iconColor = 0xffaa00; iconSize = 6; }
             else if (type === 'aa_flak') { iconColor = 0xffff00; iconSize = 5; }
-
             const icon = new THREE.Mesh(new THREE.CircleGeometry(iconSize, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1);
             this.scene.add(icon);
@@ -137,8 +126,6 @@ class Game {
             this.enemies.push(enemy);
         }
     }
-
-    // ... (rest of helper methods)
 
     initMinimap() {
         this.minimapSize = 80;
@@ -219,10 +206,9 @@ class Game {
                 deployBtn.disabled = false;
             }, 500);
         });
-        document.getElementById('btn-tutorial').addEventListener('mouseenter', () => this.audio.play('ui_click'));
         document.getElementById('btn-tutorial').addEventListener('click', () => {
             this.audio.play('ui_click');
-            alert('WASD Move, Mouse Look, F Enter/Exit, Left Click Shoot. Space Jump. Right Click Sniper Mode.');
+            alert('CONQUEST: Capture points ABLE, BAKER, and CHARLIE. Holding more points drains enemy tickets. First to 0 tickets loses.');
         });
         document.addEventListener('keydown', (e) => {
             if(e.key === 'Escape') { menu.classList.remove('hidden'); gameUI.classList.add('hidden'); document.exitPointerLock(); }
@@ -268,21 +254,32 @@ class Game {
     }
 
     animate() {
+        if (this.isGameOver) return;
         requestAnimationFrame(() => this.animate());
         const delta = this.clock.getDelta();
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
 
-        // --- AUDIO: ALTITUDE REALISM ---
+        // --- MISSION LOGIC: OBJECTIVES ---
+        let alliedPoints = 0;
+        let enemyPoints = 0;
+        this.objectives.forEach(obj => {
+            obj.update(delta, [this.player, ...this.allies], this.enemies);
+            if (obj.owner === 'allied') alliedPoints++;
+            else if (obj.owner === 'enemy') enemyPoints++;
+        });
+
+        // Ticket Bleed
+        if (enemyPoints > alliedPoints) this.alliedTickets -= (enemyPoints - alliedPoints) * delta * 2;
+        if (alliedPoints > enemyPoints) this.enemyTickets -= (alliedPoints - enemyPoints) * delta * 2;
+
+        if (this.alliedTickets <= 0 || this.enemyTickets <= 0) this.endGame();
+
         const currentY = this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y;
         this.audio.updateAltitudeEffects(currentY);
 
-        // --- WAVE SYSTEM TIMER ---
         this.waveTimer += delta;
-        if (this.waveTimer >= this.waveInterval) {
-            this.spawnReinforcements();
-            this.waveTimer = 0;
-        }
+        if (this.waveTimer >= this.waveInterval) { this.spawnReinforcements(); this.waveTimer = 0; }
 
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
         if (this.player.body.position.y < -15) { this.player.body.position.set(0, 10, 0); this.player.body.velocity.set(0, 0, 0); }
@@ -313,8 +310,11 @@ class Game {
             }
             if (enemy.isDead && !enemy.group.parent) this.enemies.splice(index, 1);
         });
+
+        // --- UPDATE HUD ---
         document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
-        document.getElementById('ammo').innerText = `AMMO: ${this.player.ammo}/150`;
+        document.getElementById('ammo').innerText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
+        
         this.playerIcon.position.set(playerPos.x, 101, playerPos.z);
         const camEuler = new THREE.Euler().setFromQuaternion(this.player.camera.quaternion, 'YXZ');
         this.playerIcon.rotation.z = camEuler.y;
@@ -324,9 +324,25 @@ class Game {
         this.compassLabels['S'].position.set(playerPos.x, 150, playerPos.z + labelDist);
         this.compassLabels['E'].position.set(playerPos.x + labelDist, 150, playerPos.z);
         this.compassLabels['W'].position.set(playerPos.x - labelDist, 150, playerPos.z);
+
         this.player.camera.layers.set(0); this.renderer.render(this.scene, this.player.camera);
         this.minimapCamera.layers.enable(0); this.minimapCamera.layers.enable(1);
         this.minimapRenderer.render(this.scene, this.minimapCamera);
+    }
+
+    endGame() {
+        this.isGameOver = true;
+        const victory = this.enemyTickets <= 0;
+        const endScreen = document.createElement('div');
+        endScreen.style.position = 'fixed'; endScreen.style.top = '0'; endScreen.style.left = '0';
+        endScreen.style.width = '100%'; endScreen.style.height = '100%';
+        endScreen.style.background = 'rgba(0,0,0,0.8)'; endScreen.style.color = victory ? '#0f0' : '#f00';
+        endScreen.style.display = 'flex'; endScreen.style.flexDirection = 'column';
+        endScreen.style.justifyContent = 'center'; endScreen.style.alignItems = 'center';
+        endScreen.style.zIndex = '1000'; endScreen.style.fontFamily = 'Courier New';
+        endScreen.innerHTML = `<h1>${victory ? 'MISSION ACCOMPLISHED' : 'MISSION FAILED'}</h1><p>Final Score: ${Math.ceil(this.alliedTickets)}</p><button onclick="location.reload()" style="background:#222;color:#fff;border:1px solid #fff;padding:10px 20px;cursor:pointer">REDEPLOY</button>`;
+        document.body.appendChild(endScreen);
+        document.exitPointerLock();
     }
 }
 new Game();
