@@ -55,8 +55,13 @@ class Game {
         this.allies = [];
         this.activeVehicle = null;
 
+        // --- WAVE SYSTEM ---
+        this.waveTimer = 0;
+        this.waveInterval = 60; // Every 60 seconds
+        this.enemiesPerWave = 6;
+
         this.initMinimap();
-        this.spawnEnemies(10);
+        this.spawnEnemies(12); // Initial force
         this.spawnAllies(5);
         this.initUI();
         
@@ -66,34 +71,74 @@ class Game {
     }
 
     async initAudio() {
-        // 1. Cinematic Layer
         await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
         await this.audio.loadSound('ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4);
-
-        // 2. Mechanical Layer (Infantry)
         await this.audio.loadSound('rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8);
         await this.audio.loadSound('rifle_cycle', 'https://cdn.freesound.org/previews/218/218151_2210086-lq.mp3', false, false, 0.6);
         await this.audio.loadSound('bullet_whiz', 'https://cdn.freesound.org/previews/192/192138_1066060-lq.mp3', false, false, 0.5);
-
-        // 3. Mechanical Layer (Tank Foley)
         await this.audio.loadSound('tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6);
         await this.audio.loadSound('tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.9);
         await this.audio.loadSound('tank_tracks', 'https://cdn.freesound.org/previews/261/261763_4933934-lq.mp3', false, true, 0.3);
         await this.audio.loadSound('tank_reload', 'https://cdn.freesound.org/previews/263/263004_4933934-lq.mp3', false, false, 0.7);
-
-        // 4. Mechanical Layer (Helicopter)
         await this.audio.loadSound('heli_engine', 'https://cdn.freesound.org/previews/337/337346_4221199-lq.mp3', false, true, 0.6);
         await this.audio.loadSound('heli_fire', 'https://cdn.freesound.org/previews/253/253381_4474943-lq.mp3', false, false, 0.5);
-
-        // 5. Explosion Layers
         await this.audio.loadSound('explosion_blast', 'https://cdn.freesound.org/previews/103/103213_746654-lq.mp3', false, false, 0.9);
         await this.audio.loadSound('explosion_debris', 'https://cdn.freesound.org/previews/563/563148_1066060-lq.mp3', false, false, 0.6);
-
-        // 6. Ambient Layer
         await this.audio.loadSound('base_hum', 'https://cdn.freesound.org/previews/212/212134_4083377-lq.mp3', true, true, 0.3);
-        // Alpine Wind Loop
         await this.audio.loadSound('ambient_wind', 'https://cdn.freesound.org/previews/458/458021_9228514-lq.mp3', false, true, 0.3);
+        
+        // --- REINFORCEMENT SOUND (Siren/Truck) ---
+        await this.audio.loadSound('reinforcement', 'https://cdn.freesound.org/previews/369/369932_6081467-lq.mp3', false, false, 0.7);
     }
+
+    spawnReinforcements() {
+        console.log("REINFORCEMENTS ARRIVING!");
+        this.audio.play('reinforcement');
+        
+        // Spawn 5 infantry + 1 heavy unit
+        this.spawnEnemies(5, 'infantry');
+        this.spawnEnemies(1, Math.random() > 0.5 ? 'tank' : 'aa_flak');
+
+        // Notification
+        const notify = document.createElement('div');
+        notify.style.position = 'fixed'; notify.style.top = '20%'; notify.style.left = '50%';
+        notify.style.transform = 'translate(-50%, -50%)'; notify.style.color = '#ff0000';
+        notify.style.fontSize = '24px'; notify.style.fontWeight = 'bold'; notify.style.fontFamily = 'Courier New';
+        notify.innerText = "CRITICAL: ENEMY REINFORCEMENTS DETECTED";
+        document.body.appendChild(notify);
+        setTimeout(() => document.body.removeChild(notify), 5000);
+    }
+
+    spawnEnemies(count, forceType = null) {
+        for(let i=0; i<count; i++) {
+            let x, z;
+            // Reinforcements spawn at the extreme edges
+            do { x = (Math.random() - 0.5) * 800; z = (Math.random() - 0.5) * 800; } 
+            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 200);
+            
+            let type = forceType;
+            if (!type) {
+                const rand = Math.random();
+                if (rand > 0.85) type = 'tank';
+                else if (rand > 0.70) type = 'aa_flak';
+                else type = 'infantry';
+            }
+
+            const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, this.audio, type);
+            
+            let iconColor = 0xff0000; let iconSize = 3;
+            if (type === 'tank') { iconColor = 0xffaa00; iconSize = 6; }
+            else if (type === 'aa_flak') { iconColor = 0xffff00; iconSize = 5; }
+
+            const icon = new THREE.Mesh(new THREE.CircleGeometry(iconSize, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
+            icon.rotation.x = -Math.PI / 2; icon.layers.set(1);
+            this.scene.add(icon);
+            enemy.minimapIcon = icon;
+            this.enemies.push(enemy);
+        }
+    }
+
+    // ... (rest of helper methods)
 
     initMinimap() {
         this.minimapSize = 80;
@@ -142,33 +187,6 @@ class Game {
         const contactMat = new CANNON.ContactMaterial(defaultMat, defaultMat, { friction: 0.1, restitution: 0.3 });
         this.world.addContactMaterial(contactMat);
         this.world.defaultContactMaterial = contactMat;
-    }
-
-    spawnEnemies(count) {
-        for(let i=0; i<count; i++) {
-            let x, z;
-            do { x = (Math.random() - 0.5) * 600; z = (Math.random() - 0.5) * 600; } 
-            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 130);
-            
-            // 15% tank, 15% flak, 70% infantry
-            const rand = Math.random();
-            let type = 'infantry';
-            if (rand > 0.85) type = 'tank';
-            else if (rand > 0.70) type = 'aa_flak';
-
-            const enemy = new Enemy(this.scene, this.world, { x, y: 20, z }, this.audio, type);
-            
-            let iconColor = 0xff0000;
-            let iconSize = 3;
-            if (type === 'tank') { iconColor = 0xffaa00; iconSize = 6; }
-            else if (type === 'aa_flak') { iconColor = 0xffff00; iconSize = 5; }
-
-            const icon = new THREE.Mesh(new THREE.CircleGeometry(iconSize, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
-            icon.rotation.x = -Math.PI / 2; icon.layers.set(1);
-            this.scene.add(icon);
-            enemy.minimapIcon = icon;
-            this.enemies.push(enemy);
-        }
     }
 
     spawnAllies(count) {
@@ -258,6 +276,13 @@ class Game {
         // --- AUDIO: ALTITUDE REALISM ---
         const currentY = this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y;
         this.audio.updateAltitudeEffects(currentY);
+
+        // --- WAVE SYSTEM TIMER ---
+        this.waveTimer += delta;
+        if (this.waveTimer >= this.waveInterval) {
+            this.spawnReinforcements();
+            this.waveTimer = 0;
+        }
 
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
         if (this.player.body.position.y < -15) { this.player.body.position.set(0, 10, 0); this.player.body.velocity.set(0, 0, 0); }
