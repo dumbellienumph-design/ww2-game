@@ -21,15 +21,20 @@ class Game {
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
+        
+        // --- PROPER SHADOW MAPPING ---
         this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         this.minimapCanvas = document.querySelector('#minimap-canvas');
         this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas });
         this.minimapRenderer.setSize(220, 220);
 
         this.scene = new THREE.Scene();
-        // Set a clear sky color so it's not black
-        this.scene.background = new THREE.Color(0x8899a6);
+        
+        // --- DRAMATIC OVERCAST SKY ---
+        this.scene.background = new THREE.Color(0x33383d);
+        this.scene.fog = new THREE.FogExp2(0x33383d, 0.003);
         
         this.world = new CANNON.World();
         this.world.gravity.set(0, -25, 0);
@@ -45,10 +50,8 @@ class Game {
         this.enemyTickets = 500;
         this.activeVehicle = null;
 
-        // --- 1. INSTANT WORLD INIT ---
         this.initWorld();
         
-        // Pointer Lock on click
         document.addEventListener('mousedown', () => {
             if (!this.isGameOver && !document.pointerLockElement) {
                 try { this.player.requestPointerLock(); } catch (e) {}
@@ -65,8 +68,6 @@ class Game {
         
         window.addEventListener('resize', () => this.onWindowResize());
         this.clock = new THREE.Clock();
-        
-        // Start game loop immediately
         this.animate();
     }
 
@@ -76,8 +77,14 @@ class Game {
         this.initPhysicsMaterial();
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         this.particles = new ParticleSystem(this.scene);
+        
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
-        this.player.body.position.set(-50, 5, -5); 
+        
+        // --- PLAYER SPAWN: OPEN AREA FACING BASE ---
+        // Base is at (-50, 0, -50). Spawn player at (-50, 5, 50) looking North
+        this.player.body.position.set(-50, 5, 40); 
+        this.player.yaw = Math.PI; // Face North towards base
+        this.player.pitch = -0.1;
 
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, null, this.particles);
         this.objectives = [
@@ -98,13 +105,25 @@ class Game {
     }
 
     initLights() {
-        this.ambientLight = new THREE.AmbientLight(0xd0e0e3, 0.6);
+        this.ambientLight = new THREE.AmbientLight(0x404040, 0.4);
         this.scene.add(this.ambientLight);
-        this.sunLight = new THREE.DirectionalLight(0xfff5e6, 1.0);
-        this.sunLight.position.set(100, 150, 50);
+
+        // --- DRAMATIC DIRECTIONAL LIGHT FOR SHADOWS ---
+        this.sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        this.sunLight.position.set(100, 200, 100);
         this.sunLight.castShadow = true;
+        
+        // Optimize shadow camera for the base area
+        this.sunLight.shadow.camera.left = -200;
+        this.sunLight.shadow.camera.right = 200;
+        this.sunLight.shadow.camera.top = 200;
+        this.sunLight.shadow.camera.bottom = -200;
+        this.sunLight.shadow.camera.near = 0.5;
+        this.sunLight.shadow.camera.far = 1000;
+        this.sunLight.shadow.mapSize.set(2048, 2048);
+        this.sunLight.shadow.bias = -0.0005;
+        
         this.scene.add(this.sunLight);
-        this.scene.fog = new THREE.FogExp2(0x8899a6, 0.002);
     }
 
     initPhysicsMaterial() {
