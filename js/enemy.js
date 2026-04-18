@@ -18,8 +18,10 @@ export class Enemy {
         if (type === 'tank') {
             this.health = 250;
             this.speed = 3;
-            this.fireRate = 5.0;
-            this.shootDist = 120;
+            this.fireRate = 6.0; // Slow reload for 88mm
+            this.shootDist = 150;
+            this.traverseSpeed = 0.3; // Radians per sec
+            this.currentTurretYaw = 0;
         } else if (type === 'aa_flak') {
             this.health = 100;
             this.speed = 0; 
@@ -29,11 +31,11 @@ export class Enemy {
         
         this.isDead = false;
         this.isCrouching = false;
-        this.state = 'patrol'; // patrol, chase, flank, cover, rush
+        this.state = 'patrol'; 
         this.stateTimer = 0;
         this.targetPos = new THREE.Vector3();
         this.fireTimer = Math.random() * 2;
-        this.suppressionLevel = 0; // 0 to 1
+        this.suppressionLevel = 0;
 
         this.group = new THREE.Group();
         this.scene.add(this.group);
@@ -45,7 +47,7 @@ export class Enemy {
     initPhysics(position) {
         let shape;
         if (this.type === 'infantry') shape = new CANNON.Box(new CANNON.Vec3(0.4, 0.9, 0.4));
-        else if (this.type === 'tank') shape = new CANNON.Box(new CANNON.Vec3(2.5, 1.2, 4.0));
+        else if (this.type === 'tank') shape = new CANNON.Box(new CANNON.Vec3(2.6, 1.2, 4.0));
         else if (this.type === 'aa_flak') shape = new CANNON.Box(new CANNON.Vec3(2, 1, 2));
 
         this.body = new CANNON.Body({
@@ -55,18 +57,20 @@ export class Enemy {
             fixedRotation: this.type !== 'tank',
             linearDamping: 0.5
         });
+        
+        if(this.type === 'tank') this.body.shapeOffsets[0].set(0, 0.5, 0);
+
         this.world.addBody(this.body);
         this.body.mesh = this.group;
         this.body.onHit = (damage) => this.takeDamage(damage);
     }
 
     initVisuals() {
-        const mat = new THREE.MeshStandardMaterial({ color: 0x4a4e4d }); // German Grey
+        const mat = new THREE.MeshStandardMaterial({ color: 0x4a4e4d }); 
 
         if (this.type === 'infantry') {
             this.visualGroup = new THREE.Group();
             this.group.add(this.visualGroup);
-
             const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.3), mat);
             torso.position.y = 0.4;
             this.visualGroup.add(torso);
@@ -78,14 +82,19 @@ export class Enemy {
             this.visualGroup.add(this.gun);
         } 
         else if (this.type === 'tank') {
-            const hull = new THREE.Mesh(new THREE.BoxGeometry(5, 1.8, 8), mat);
+            const tigerMat = new THREE.MeshStandardMaterial({ color: 0x3d4131 });
+            const hull = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.5, 8), tigerMat);
             this.group.add(hull);
-            this.turret = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2, 1.2, 12), mat);
-            this.turret.position.y = 1.5;
-            this.group.add(this.turret);
-            this.barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5).rotateX(Math.PI/2), mat);
-            this.barrel.position.set(0, 1.5, -4);
-            this.group.add(this.barrel);
+            
+            this.turretGroup = new THREE.Group();
+            this.turretGroup.position.y = 1.5;
+            this.group.add(this.turretGroup);
+
+            const turret = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2, 1.2, 12), tigerMat);
+            this.turretGroup.add(turret);
+            this.barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.25, 5.5).rotateX(Math.PI/2), new THREE.MeshStandardMaterial({color:0x222222}));
+            this.barrel.position.set(0, 0.1, -4);
+            this.turretGroup.add(this.barrel);
         }
         else if (this.type === 'aa_flak') {
             const base = new THREE.Mesh(new THREE.BoxGeometry(4, 0.3, 0.6), mat);
@@ -106,13 +115,11 @@ export class Enemy {
 
     takeDamage(amount) {
         this.health -= amount;
-        // TACTICAL RESPONSE: Immediate Suppression/Cover on hit
         if (this.type === 'infantry' && !this.isDead) {
             this.suppressionLevel = 1.0;
             this.state = 'cover';
             this.stateTimer = 3;
         }
-
         if (this.health <= 0 && !this.isDead) {
             this.isDead = true;
             this.state = 'dead';
@@ -129,10 +136,8 @@ export class Enemy {
         const currentPos = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
         const dist = currentPos.distanceTo(playerPosition);
 
-        // --- SUPPRESSION RECOVERY ---
         this.suppressionLevel = Math.max(0, this.suppressionLevel - delta * 0.2);
 
-        // --- AI STATE MACHINE ---
         this.stateTimer -= delta;
         if (this.stateTimer <= 0) {
             this.decideNextState(dist, playerPosition);
@@ -140,12 +145,28 @@ export class Enemy {
 
         this.executeState(delta, playerPosition, dist, player);
 
-        // Shooting
-        if (dist < this.shootDist && this.suppressionLevel < 0.8) {
+        // --- SHOOTING LOGIC ---
+        let canShoot = dist < this.shootDist;
+        
+        // Tank realism: Only fire if turret is pointed at player
+        if (this.type === 'tank') {
+            const targetDir = playerPosition.clone().sub(currentPos).normalize();
+            const turretWorldDir = new THREE.Vector3(0,0,-1).applyQuaternion(this.turretGroup.getWorldQuaternion(new THREE.Quaternion()));
+            const dot = turretWorldDir.dot(targetDir);
+            if (dot < 0.95) canShoot = false; // Turret still traversing
+        }
+
+        if (canShoot && this.suppressionLevel < 0.8) {
             this.fireTimer += delta;
             if (this.fireTimer >= this.fireRate) {
                 this.shoot(player);
                 this.fireTimer = 0;
+                
+                // TANK TACTIC: Reverse to cover after shot
+                if (this.type === 'tank') {
+                    this.state = 'reload_hide';
+                    this.stateTimer = 3; 
+                }
             }
         }
     }
@@ -154,6 +175,14 @@ export class Enemy {
         if (this.type === 'aa_flak') {
             this.state = dist < this.shootDist ? 'aim' : 'idle';
             this.stateTimer = 5;
+            return;
+        }
+
+        if (this.type === 'tank') {
+            if (dist > 130) this.state = 'stalk';
+            else if (dist < 80) this.state = 'reload_hide'; // Back away if too close
+            else this.state = 'ambush';
+            this.stateTimer = 4 + Math.random() * 4;
             return;
         }
 
@@ -166,7 +195,6 @@ export class Enemy {
             this.targetPos.set(this.body.position.x + (Math.random()-0.5)*60, 0, this.body.position.z + (Math.random()-0.5)*60);
             this.stateTimer = 5 + Math.random() * 5;
         } else if (dist > 30) {
-            // FM 21-75: 3-5 Second Rush
             this.state = 'rush';
             this.stateTimer = 3 + Math.random() * 2;
             this.targetPos.copy(playerPos);
@@ -178,46 +206,70 @@ export class Enemy {
 
     executeState(delta, playerPos, dist, player) {
         const moveDir = new THREE.Vector3();
-        this.isCrouching = false;
+        const currentPos = this.group.position;
 
-        if (this.type !== 'aa_flak') {
-            if (this.state === 'patrol') {
-                moveDir.subVectors(this.targetPos, this.group.position).normalize();
-            } else if (this.state === 'rush') {
-                // High speed forward sprint
-                moveDir.subVectors(playerPos, this.group.position).normalize();
+        if (this.type === 'tank') {
+            // TURRET TRAVERSE (Always track player)
+            const targetDir = playerPos.clone().sub(currentPos).normalize();
+            const hullQuat = this.group.quaternion.clone();
+            const invHullQuat = hullQuat.invert();
+            const localTargetDir = targetDir.clone().applyQuaternion(invHullQuat);
+            const targetYaw = Math.atan2(localTargetDir.x, localTargetDir.z) + Math.PI;
+
+            let yawDiff = targetYaw - this.currentTurretYaw;
+            while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+            while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+            
+            const step = this.traverseSpeed * delta;
+            if (Math.abs(yawDiff) < step) this.currentTurretYaw = targetYaw;
+            else this.currentTurretYaw += Math.sign(yawDiff) * step;
+            this.turretGroup.rotation.y = this.currentTurretYaw;
+
+            // HULL MOVEMENT
+            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
+            if (this.state === 'stalk') {
+                moveDir.subVectors(playerPos, currentPos).normalize();
+            } else if (this.state === 'reload_hide') {
+                moveDir.subVectors(currentPos, playerPos).normalize(); // Reverse
+            } else if (this.state === 'ambush') {
+                this.body.velocity.set(0, this.body.velocity.y, 0); // Stop and aim
+            }
+
+            if (moveDir.length() > 0) {
+                this.body.velocity.x = moveDir.x * this.speed;
+                this.body.velocity.z = moveDir.z * this.speed;
+                this.group.lookAt(playerPos.x, this.group.position.y, playerPos.z);
+            }
+            return;
+        }
+
+        // Infantry/Flak movement (Existing logic)
+        if (this.type === 'infantry') {
+            if (this.state === 'patrol') moveDir.subVectors(this.targetPos, currentPos).normalize();
+            else if (this.state === 'rush') {
+                moveDir.subVectors(playerPos, currentPos).normalize();
                 this.body.velocity.x = moveDir.x * (this.speed * 1.5);
                 this.body.velocity.z = moveDir.z * (this.speed * 1.5);
             } else if (this.state === 'cover' || this.state === 'flank') {
-                // Tactical sidestep or crouch
-                const toPlayer = new THREE.Vector3().subVectors(playerPos, this.group.position).normalize();
-                moveDir.set(-toPlayer.z, 0, toPlayer.x); // Perpendicular
+                const toPlayer = new THREE.Vector3().subVectors(playerPos, currentPos).normalize();
+                moveDir.set(-toPlayer.z, 0, toPlayer.x);
                 this.isCrouching = true;
-            } else {
-                moveDir.subVectors(playerPos, this.group.position).normalize();
-            }
+            } else moveDir.subVectors(playerPos, currentPos).normalize();
 
             if (this.state !== 'rush') {
                 this.body.velocity.x = moveDir.x * this.speed;
                 this.body.velocity.z = moveDir.z * this.speed;
             }
-
             this.group.lookAt(playerPos.x, this.group.position.y, playerPos.z);
-            
-            // Visual feedback for crouch/suppression
-            if (this.isCrouching && this.visualGroup) {
-                this.visualGroup.position.y = THREE.MathUtils.lerp(this.visualGroup.position.y, -0.4, 0.1);
-            } else if (this.visualGroup) {
-                this.visualGroup.position.y = THREE.MathUtils.lerp(this.visualGroup.position.y, 0, 0.1);
-            }
-        } else {
+            if (this.isCrouching && this.visualGroup) this.visualGroup.position.y = THREE.MathUtils.lerp(this.visualGroup.position.y, -0.4, 0.1);
+            else if (this.visualGroup) this.visualGroup.position.y = THREE.MathUtils.lerp(this.visualGroup.position.y, 0, 0.1);
+        } else if (this.type === 'aa_flak') {
             this.turret.lookAt(playerPos.x, this.turret.position.y, playerPos.z);
         }
     }
 
     shoot(player) {
         if (this.audio) this.audio.play(this.type === 'infantry' ? 'rifle_fire' : 'tank_fire', { randomPitch: true });
-
         const startPos = new THREE.Vector3();
         if (this.type === 'aa_flak') this.barrel.getWorldPosition(startPos);
         else if (this.type === 'tank') this.barrel.getWorldPosition(startPos);
@@ -227,7 +279,7 @@ export class Enemy {
             const dir = player.camera.position.clone().sub(startPos).normalize();
             this.spawnBullet(startPos, dir, player);
         } else {
-            VFX.createExplosion(this.scene, this.world, player.camera.position, this.type === 'tank' ? 2 : 5, 20, this.audio);
+            VFX.createExplosion(this.scene, this.world, player.camera.position, this.type === 'tank' ? 3 : 6, 30, this.audio);
         }
     }
 
@@ -239,12 +291,11 @@ export class Enemy {
         const anim = () => {
             if (Date.now() - startTime > 2000 || this.isDead) { this.scene.remove(bullet); return; }
             bullet.position.add(dir.clone().multiplyScalar(1.2));
-            const distToPlayer = bullet.position.distanceTo(player.camera.position);
-            if (distToPlayer < 2 && !bullet.userData.whizzed) {
+            if (bullet.position.distanceTo(player.camera.position) < 2 && !bullet.userData.whizzed) {
                 if (this.audio) this.audio.play('bullet_whiz');
                 bullet.userData.whizzed = true;
             }
-            if (distToPlayer < 0.8) {
+            if (bullet.position.distanceTo(player.camera.position) < 0.8) {
                 player.takeDamage(10);
                 VFX.createExplosion(this.scene, this.world, bullet.position.clone(), 1, 0, this.audio);
                 this.scene.remove(bullet);
