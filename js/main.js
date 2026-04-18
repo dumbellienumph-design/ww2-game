@@ -12,14 +12,12 @@ import { AudioManager } from './audio.js';
 
 class Game {
     constructor() {
-        // Main Renderer
         this.canvas = document.querySelector('#game-canvas');
         this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.devicePixelRatio || 1);
         this.renderer.shadowMap.enabled = true;
 
-        // Minimap Renderer
         this.minimapCanvas = document.querySelector('#minimap-canvas');
         this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas, antialias: true });
         this.minimapRenderer.setSize(200, 200);
@@ -38,14 +36,11 @@ class Game {
         this.terrain = new Terrain(this.scene, this.world);
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         
-        // --- PLAYER SETUP ---
-        // Pass audio to player for local weapon sounds
-        this.player = new Player(this.scene, this.world, this.renderer.domElement, null); // Will update after audio init
+        this.player = new Player(this.scene, this.world, this.renderer.domElement, null);
         this.player.body.position.set(-50, 5, -50); 
 
-        // --- AUDIO SYSTEM ---
         this.audio = new AudioManager(this.player.camera);
-        this.player.audio = this.audio; // Update player reference
+        this.player.audio = this.audio;
         this.initAudio();
 
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio);
@@ -75,25 +70,28 @@ class Game {
         await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
         await this.audio.loadSound('ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4);
 
-        // 2. Mechanical Layer (Weapons)
-        // Realistic Rifle Report
+        // 2. Mechanical Layer (Infantry)
         await this.audio.loadSound('rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8);
-        // Bolt Cycling Sound
         await this.audio.loadSound('rifle_cycle', 'https://cdn.freesound.org/previews/218/218151_2210086-lq.mp3', false, false, 0.6);
-        // Supersonic Whiz (If bullet passes close)
         await this.audio.loadSound('bullet_whiz', 'https://cdn.freesound.org/previews/192/192138_1066060-lq.mp3', false, false, 0.5);
 
-        // 3. Mechanical Layer (Vehicles)
+        // 3. Mechanical Layer (Tank Foley)
         await this.audio.loadSound('tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6);
-        await this.audio.loadSound('tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8);
+        await this.audio.loadSound('tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.9);
+        // Track Squeal: Haunting metallic howl
+        await this.audio.loadSound('tank_tracks', 'https://cdn.freesound.org/previews/261/261763_4933934-lq.mp3', false, true, 0.3);
+        // Breech Reload: Mechanical sequence
+        await this.audio.loadSound('tank_reload', 'https://cdn.freesound.org/previews/263/263004_4933934-lq.mp3', false, false, 0.7);
+
+        // 4. Mechanical Layer (Helicopter)
         await this.audio.loadSound('heli_engine', 'https://cdn.freesound.org/previews/337/337346_4221199-lq.mp3', false, true, 0.6);
         await this.audio.loadSound('heli_fire', 'https://cdn.freesound.org/previews/253/253381_4474943-lq.mp3', false, false, 0.5);
 
-        // 4. Explosion Layers
+        // 5. Explosion Layers
         await this.audio.loadSound('explosion_blast', 'https://cdn.freesound.org/previews/103/103213_746654-lq.mp3', false, false, 0.9);
         await this.audio.loadSound('explosion_debris', 'https://cdn.freesound.org/previews/563/563148_1066060-lq.mp3', false, false, 0.6);
 
-        // 5. Ambient Layer
+        // 6. Ambient Layer
         await this.audio.loadSound('base_hum', 'https://cdn.freesound.org/previews/212/212134_4083377-lq.mp3', true, true, 0.3);
     }
 
@@ -103,7 +101,6 @@ class Game {
         this.minimapCamera.position.set(0, 200, 0);
         this.minimapCamera.lookAt(0, 0, 0);
         this.minimapCamera.up.set(0, 0, -1);
-
         const arrowShape = new THREE.Shape();
         arrowShape.moveTo(0, 6); arrowShape.lineTo(-3, -4); arrowShape.lineTo(0, -2); arrowShape.lineTo(3, -4); arrowShape.lineTo(0, 6);
         const arrowGeo = new THREE.ShapeGeometry(arrowShape);
@@ -112,7 +109,6 @@ class Game {
         this.playerIcon.rotation.x = -Math.PI / 2;
         this.playerIcon.layers.set(1);
         this.scene.add(this.playerIcon);
-
         this.initCompassLabels();
     }
 
@@ -185,15 +181,12 @@ class Game {
         const menu = document.getElementById('main-menu');
         const gameUI = document.getElementById('game-ui');
         const deployBtn = document.getElementById('btn-mission-1');
-
         deployBtn.addEventListener('mouseenter', () => this.audio.play('ui_click'));
         deployBtn.addEventListener('click', () => {
             this.audio.play('ui_click');
             this.audio.startAudioContext(); 
-            
             deployBtn.innerText = "LOADING...";
             deployBtn.disabled = true;
-
             setTimeout(() => {
                 menu.classList.add('hidden');
                 gameUI.classList.remove('hidden');
@@ -202,13 +195,11 @@ class Game {
                 deployBtn.disabled = false;
             }, 500);
         });
-
         document.getElementById('btn-tutorial').addEventListener('mouseenter', () => this.audio.play('ui_click'));
         document.getElementById('btn-tutorial').addEventListener('click', () => {
             this.audio.play('ui_click');
             alert('WASD Move, Mouse Look, F Enter/Exit, Left Click Shoot. Space Jump. Right Click Sniper Mode.');
         });
-
         document.addEventListener('keydown', (e) => {
             if(e.key === 'Escape') { menu.classList.remove('hidden'); gameUI.classList.add('hidden'); document.exitPointerLock(); }
             if(e.code === 'KeyF') this.toggleVehicle();
@@ -258,9 +249,7 @@ class Game {
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
-
         if (this.player.body.position.y < -15) { this.player.body.position.set(0, 10, 0); this.player.body.velocity.set(0, 0, 0); }
-
         if (this.activeVehicle) {
             this.activeVehicle.update(delta, this.player.moveState, this.player.camera);
             const targetPos = new THREE.Vector3();
@@ -279,7 +268,6 @@ class Game {
             }
             this.player.body.position.copy(this.activeVehicle.body.position);
         } else { this.player.update(delta, this.terrain); }
-
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
         this.enemies.forEach((enemy, index) => {
             enemy.update(delta, playerPos, this.player);
@@ -289,7 +277,6 @@ class Game {
             }
             if (enemy.isDead && !enemy.group.parent) this.enemies.splice(index, 1);
         });
-
         document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
         document.getElementById('ammo').innerText = `AMMO: ${this.player.ammo}/150`;
         this.playerIcon.position.set(playerPos.x, 101, playerPos.z);
@@ -301,7 +288,6 @@ class Game {
         this.compassLabels['S'].position.set(playerPos.x, 150, playerPos.z + labelDist);
         this.compassLabels['E'].position.set(playerPos.x + labelDist, 150, playerPos.z);
         this.compassLabels['W'].position.set(playerPos.x - labelDist, 150, playerPos.z);
-
         this.player.camera.layers.set(0); this.renderer.render(this.scene, this.player.camera);
         this.minimapCamera.layers.enable(0); this.minimapCamera.layers.enable(1);
         this.minimapRenderer.render(this.scene, this.minimapCamera);
