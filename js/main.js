@@ -36,7 +36,6 @@ class Game {
         this.timeOfDay = 0;
         this.daySpeed = 0.05;
 
-        // Static camera for the menu/loading phase
         this.tempCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.tempCamera.position.set(0, 50, 100);
         this.tempCamera.lookAt(0, 0, 0);
@@ -57,12 +56,12 @@ class Game {
         ];
 
         this.loadingImages = [
-            "https://images.unsplash.com/photo-1599032909756-5dee8c65f6d6?auto=format&fit=crop&q=80&w=1920", // Tank
-            "https://images.unsplash.com/photo-1518112166137-859095689100?auto=format&fit=crop&q=80&w=1920", // Plane
-            "https://images.unsplash.com/photo-1533560913523-c0978282c06a?auto=format&fit=crop&q=80&w=1920", // Soldiers
-            "https://images.unsplash.com/photo-1506197357084-5853f75196d7?auto=format&fit=crop&q=80&w=1920", // Coast/Beach
-            "https://images.unsplash.com/photo-1440439603332-159e99298f3c?auto=format&fit=crop&q=80&w=1920", // Old Map
-            "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&q=80&w=1920"  // Battlefield vibes
+            "https://images.unsplash.com/photo-1599032909756-5dee8c65f6d6?auto=format&fit=crop&q=80&w=1920",
+            "https://images.unsplash.com/photo-1518112166137-859095689100?auto=format&fit=crop&q=80&w=1920",
+            "https://images.unsplash.com/photo-1533560913523-c0978282c06a?auto=format&fit=crop&q=80&w=1920",
+            "https://images.unsplash.com/photo-1506197357084-5853f75196d7?auto=format&fit=crop&q=80&w=1920",
+            "https://images.unsplash.com/photo-1440439603332-159e99298f3c?auto=format&fit=crop&q=80&w=1920",
+            "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&q=80&w=1920"
         ];
         
         this.initUI();
@@ -80,7 +79,6 @@ class Game {
         btnBegin.addEventListener('click', () => {
             homeScreen.classList.add('hidden');
             loadingScreen.classList.remove('hidden');
-            
             this.audio.startAudioContext();
             this.loadGame();
         });
@@ -99,26 +97,18 @@ class Game {
         const bgElement = document.getElementById('loading-background');
         let tipIndex = 0;
         let imgIndex = 0;
-
-        // Set initial image
         bgElement.style.backgroundImage = `url('${this.loadingImages[0]}')`;
 
         this.tipInterval = setInterval(() => {
             tipIndex = (tipIndex + 1) % this.tips.length;
             imgIndex = (imgIndex + 1) % this.loadingImages.length;
-
-            // Fade out tip
             tipElement.style.opacity = 0;
-            
             setTimeout(() => {
-                // Update tip and image
                 tipElement.innerText = this.tips[tipIndex];
                 bgElement.style.backgroundImage = `url('${this.loadingImages[imgIndex]}')`;
-                
-                // Fade in tip
                 tipElement.style.opacity = 1;
             }, 500);
-        }, 4500);
+        }, 3500); // Slightly faster cycling
     }
 
     async loadGame() {
@@ -144,46 +134,15 @@ class Game {
 
         const yieldThread = () => new Promise(resolve => requestAnimationFrame(resolve));
 
-        // --- STEP 1: LOAD ANTHEM AND START PLAYING IMMEDIATELY (0-10%) ---
-        updateUI(2, "INITIALIZING FIELD AUDIO...");
+        // --- STEP 1: INITIALIZE SOUND & ANTHEM (0-15%) ---
+        updateUI(5, "INITIALIZING FIELD AUDIO...");
         await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
         this.audio.play('anthem');
-        updateUI(10, "ANTHEM BROADCASTING...");
+        updateUI(15, "ANTHEM BROADCASTING...");
 
-        // --- STEP 2: Terrain & Environment (10-25%) ---
-        updateUI(15, "ANALYZING TERRAIN DATA...");
-        await yieldThread();
-        this.terrain = new Terrain(this.scene, this.world);
-        
-        updateUI(20, "CALIBRATING ATMOSPHERIC LIGHTS...");
-        this.initLights();
-        this.initPhysicsMaterial();
-        await yieldThread();
-        updateUI(25, "ENVIRONMENT READY.");
-
-        // --- STEP 3: Vegetation & Particles (25-40%) ---
-        updateUI(30, "DEPLOYING FIELD VEGETATION...");
-        this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
-        await yieldThread();
-        
-        updateUI(35, "INITIALIZING BALLISTIC PARTICLES...");
-        this.particles = new ParticleSystem(this.scene);
-        await yieldThread();
-        updateUI(40, "SYSTEMS SYNCHRONIZED.");
-
-        // --- STEP 4: Player & Audio Listener (40-50%) ---
-        updateUI(45, "ARMING INFANTRY SQUAD...");
-        this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
-        this.player.body.position.set(-50, 5, -50); 
-        this.player.audio = this.audio;
-        
-        this.audio.listener.parent.remove(this.audio.listener);
-        this.player.camera.add(this.audio.listener);
-        await yieldThread();
-        updateUI(50, "PLAYER READY.");
-
-        // --- STEP 5: Real-time Sound Asset Loading (50-85%) ---
-        updateUI(51, "BUFFERING COMBAT SOUNDSCAPES...");
+        // --- STEP 2: PARALLEL ASSET LOADING (15-60%) ---
+        // We load all heavy sounds at once to save time
+        updateUI(16, "BUFFERING COMBAT SOUNDSCAPES...");
         const soundAssets = [
             ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
             ['ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4],
@@ -201,26 +160,51 @@ class Game {
             ['reinforcement', 'https://cdn.freesound.org/previews/369/369932_6081467-lq.mp3', false, false, 0.7]
         ];
 
-        for (let i = 0; i < soundAssets.length; i++) {
-            const s = soundAssets[i];
+        let finishedSounds = 0;
+        await Promise.all(soundAssets.map(async (s) => {
             await this.audio.loadSound(...s);
-            const soundProgress = 51 + ((i + 1) / soundAssets.length) * 34;
+            finishedSounds++;
+            const soundProgress = 16 + (finishedSounds / soundAssets.length) * 44;
             updateUI(soundProgress, `SYNCING ASSET: ${s[0].toUpperCase()}...`);
-        }
+        }));
 
-        // --- STEP 6: Base & NPCs (85-98%) ---
-        updateUI(86, "FORTIFYING OUTPOSTS...");
-        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
+        // --- STEP 3: WORLD GENERATION (60-90%) ---
+        updateUI(65, "ANALYZING TERRAIN DATA...");
+        await yieldThread();
+        this.terrain = new Terrain(this.scene, this.world);
         
-        updateUI(88, "ESTABLISHING OBJECTIVES...");
+        updateUI(70, "CALIBRATING ATMOSPHERIC LIGHTS...");
+        this.initLights();
+        this.initPhysicsMaterial();
+        await yieldThread();
+        
+        updateUI(75, "DEPLOYING FIELD VEGETATION...");
+        this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
+        await yieldThread();
+        
+        updateUI(80, "INITIALIZING BALLISTIC PARTICLES...");
+        this.particles = new ParticleSystem(this.scene);
+        await yieldThread();
+        
+        updateUI(85, "ARMING INFANTRY SQUAD...");
+        this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
+        this.player.body.position.set(-50, 5, -50); 
+        this.player.audio = this.audio;
+        this.audio.listener.parent.remove(this.audio.listener);
+        this.player.camera.add(this.audio.listener);
+        await yieldThread();
+        updateUI(90, "SYSTEMS SYNCHRONIZED.");
+
+        // --- STEP 4: UNITS & OBJECTIVES (90-100%) ---
+        updateUI(92, "FORTIFYING OUTPOSTS...");
+        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio, this.particles);
         this.objectives = [
             new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio),
             new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio),
             new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, this.audio)
         ];
-        await yieldThread();
-
-        updateUI(92, "DEPLOYING MOTORIZED DIVISIONS...");
+        
+        updateUI(94, "DEPLOYING MOTORIZED DIVISIONS...");
         this.tanks = [
             new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio, this.particles), 
             new Tank(this.scene, this.world, { x: -10, y: 5, z: -80 }, this.audio, this.particles), 
@@ -228,29 +212,22 @@ class Game {
         ];
         this.helicopters = [new Helicopter(this.scene, this.world, { x: -20, y: 15, z: 20 }, this.audio, this.particles)];
         
-        updateUI(98, "INFILTRATING STRIKE TEAMS...");
-        this.enemies = [];
-        this.allies = [];
+        updateUI(96, "INFILTRATING STRIKE TEAMS...");
         this.spawnEnemies(12);
         this.spawnAllies(5);
-        await yieldThread();
-
-        // --- STEP 7: Final Polish (98-100%) ---
-        updateUI(99, "FINALIZING TACTICAL OVERLAY...");
+        
+        updateUI(98, "FINALIZING TACTICAL OVERLAY...");
         this.alliedTickets = 500;
         this.enemyTickets = 500;
         this.activeVehicle = null;
         this.initMinimap();
         await yieldThread();
 
-        updateUI(100, "COMMAND READY. COMMENCING OPERATION.");
+        updateUI(100, "COMMAND AUTHORIZED. DEPLOYING.");
 
-        // Clear intervals
         clearInterval(this.tipInterval);
-
-        // Music Cross-Fade
-        this.audio.fadeSound('anthem', 0, 3);
-        this.audio.fadeSound('action_theme', 0.6, 3);
+        this.audio.fadeSound('anthem', 0, 2);
+        this.audio.fadeSound('action_theme', 0.6, 2);
         this.audio.play('ambient_wind');
 
         setTimeout(() => {
@@ -258,7 +235,7 @@ class Game {
             document.getElementById('ui-layer').classList.remove('hidden');
             try { this.player.requestPointerLock(); } catch (e) {}
             this.isLoaded = true;
-        }, 1500);
+        }, 800);
     }
 
     initLights() {
@@ -280,6 +257,7 @@ class Game {
     }
 
     spawnEnemies(count) {
+        this.enemies = this.enemies || [];
         for(let i=0; i<count; i++) {
             let x, z;
             do { x = (Math.random() - 0.5) * 800; z = (Math.random() - 0.5) * 800; } 
@@ -294,6 +272,7 @@ class Game {
     }
 
     spawnAllies(count) {
+        this.allies = this.allies || [];
         for(let i=0; i<count; i++) {
             const x = -40 + (Math.random() - 0.5) * 40; const z = -40 + (Math.random() - 0.5) * 40;
             const ally = new Ally(this.scene, this.world, { x, y: 5, z }, this.audio);
@@ -362,7 +341,6 @@ class Game {
         if (this.alliedTickets <= 0 || this.enemyTickets <= 0) this.endGame();
 
         this.audio.updateAltitudeEffects(this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y);
-        
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
         
         if (this.activeVehicle) {
