@@ -28,6 +28,9 @@ class Game {
         this.minimapRenderer.setSize(220, 220);
 
         this.scene = new THREE.Scene();
+        // Set a clear sky color so it's not black
+        this.scene.background = new THREE.Color(0x8899a6);
+        
         this.world = new CANNON.World();
         this.world.gravity.set(0, -25, 0);
 
@@ -38,7 +41,6 @@ class Game {
         this.isPlayerActive = false; 
         this.activeRadius = 200; 
 
-        // State variables required for update loop
         this.alliedTickets = 500;
         this.enemyTickets = 500;
         this.activeVehicle = null;
@@ -63,6 +65,8 @@ class Game {
         
         window.addEventListener('resize', () => this.onWindowResize());
         this.clock = new THREE.Clock();
+        
+        // Start game loop immediately
         this.animate();
     }
 
@@ -94,13 +98,13 @@ class Game {
     }
 
     initLights() {
-        this.ambientLight = new THREE.AmbientLight(0xd0e0e3, 0.4);
+        this.ambientLight = new THREE.AmbientLight(0xd0e0e3, 0.6);
         this.scene.add(this.ambientLight);
-        this.sunLight = new THREE.DirectionalLight(0xfff5e6, 0.8);
+        this.sunLight = new THREE.DirectionalLight(0xfff5e6, 1.0);
         this.sunLight.position.set(100, 150, 50);
         this.sunLight.castShadow = true;
         this.scene.add(this.sunLight);
-        this.scene.fog = new THREE.FogExp2(0x050510, 0.002);
+        this.scene.fog = new THREE.FogExp2(0x8899a6, 0.002);
     }
 
     initPhysicsMaterial() {
@@ -154,29 +158,13 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    updateEnvironment(delta) {
-        this.timeOfDay += delta * 0.05;
-        const sunX = Math.cos(this.timeOfDay) * 200;
-        const sunY = Math.sin(this.timeOfDay) * 200;
-        this.sunLight.position.set(sunX, sunY, 50);
-        const dayFactor = Math.max(0, Math.min(1, sunY / 50));
-        this.sunLight.intensity = dayFactor * 0.8;
-        const dayColor = new THREE.Color(0x8899a6);
-        const nightColor = new THREE.Color(0x050510);
-        const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
-        this.scene.background = currentColor;
-        if (this.scene.fog) this.scene.fog.color = currentColor;
-    }
-
     updateCulling() {
         if (!this.player) return;
         const playerPos = this.player.body.position;
-
         if (this.vegetation && this.vegetation.objects) {
             this.vegetation.objects.forEach(obj => {
                 const distSq = playerPos.distanceSquared(obj.body.position);
                 const shouldBeActive = distSq < this.activeRadius * this.activeRadius;
-
                 if (shouldBeActive && !obj.active) {
                     this.scene.add(obj.mesh);
                     this.world.addBody(obj.body);
@@ -195,12 +183,12 @@ class Game {
         requestAnimationFrame(() => this.animate());
         const delta = this.clock.getDelta();
 
-        // Check if player has moved for the first time
         if (this.player && !this.isPlayerActive) {
             const vel = this.player.body.velocity;
             if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true;
         }
 
+        this.updateCulling();
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
         this.particles.update(delta, this.player.camera);
