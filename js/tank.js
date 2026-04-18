@@ -210,7 +210,7 @@ export class Tank {
         this.world.addBody(shellBody);
         shellBody.mesh = shellMesh;
         shellBody.addEventListener('collide', (e) => {
-            VFX.createExplosion(this.scene, this.world, shellBody.position.clone(), 15, 250);
+            VFX.createExplosion(this.scene, this.world, shellBody.position.clone(), 15, 250, this.audio);
             setTimeout(() => { if (shellBody.world) { this.world.removeBody(shellBody); this.scene.remove(shellMesh); } }, 20);
         });
         setTimeout(() => { if(shellBody.world) { this.world.removeBody(shellBody); this.scene.remove(shellMesh); } }, 5000);

@@ -136,7 +136,7 @@ export class Helicopter {
         this.world.addBody(bulletBody);
         bulletBody.mesh = bulletMesh;
         bulletBody.addEventListener('collide', (e) => {
-            VFX.createExplosion(this.scene, this.world, bulletBody.position.clone(), 3, 30);
+            VFX.createExplosion(this.scene, this.world, bulletBody.position.clone(), 3, 30, this.audio);
             setTimeout(() => { if(bulletBody.world) { this.world.removeBody(bulletBody); this.scene.remove(bulletMesh); } }, 20);
         });
         setTimeout(() => { if(bulletBody.world) { this.world.removeBody(bulletBody); this.scene.remove(bulletMesh); } }, 3000);

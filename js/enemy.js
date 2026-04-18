@@ -139,6 +139,7 @@ export class Enemy {
 
             if (distToPlayer < 1) {
                 player.takeDamage(10);
+                VFX.createExplosion(this.scene, this.world, bullet.position.clone(), 1, 0, this.audio);
                 this.scene.remove(bullet);
                 return;
             }
