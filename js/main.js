@@ -18,19 +18,19 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.devicePixelRatio || 1);
         this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         this.minimapCanvas = document.querySelector('#minimap-canvas');
         this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas, antialias: true });
         this.minimapRenderer.setSize(200, 200);
-        this.minimapRenderer.setPixelRatio(1);
 
         this.scene = new THREE.Scene();
-        const skyColor = new THREE.Color(0x8899a6); 
-        this.scene.background = skyColor;
-        this.scene.fog = new THREE.FogExp2(skyColor, 0.0035);
-
         this.world = new CANNON.World();
         this.world.gravity.set(0, -25, 0);
+
+        // --- 4.1 DYNAMIC DAY/NIGHT ---
+        this.timeOfDay = 0; // 0 to 2PI
+        this.daySpeed = 0.05; // Progression speed
 
         this.initLights();
         this.initPhysicsMaterial();
@@ -56,17 +56,14 @@ class Game {
         this.allies = [];
         this.activeVehicle = null;
 
-        // --- MISSION SYSTEM ---
-        this.waveTimer = 0;
-        this.waveInterval = 60;
         this.alliedTickets = 500;
         this.enemyTickets = 500;
         this.isGameOver = false;
 
         this.objectives = [
-            new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio), // Control Tower
-            new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio), // Motor Pool
-            new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, this.audio) // Water Tower
+            new Objective(this.scene, "ABLE", { x: 25, y: 0, z: -40 }, this.audio),
+            new Objective(this.scene, "BAKER", { x: -50, y: 0, z: 10 }, this.audio),
+            new Objective(this.scene, "CHARLIE", { x: 50, y: 0, z: 40 }, this.audio)
         ];
 
         this.initMinimap();
@@ -98,75 +95,54 @@ class Game {
         await this.audio.loadSound('reinforcement', 'https://cdn.freesound.org/previews/369/369932_6081467-lq.mp3', false, false, 0.7);
     }
 
-    spawnReinforcements() {
-        this.audio.play('reinforcement');
-        this.spawnEnemies(6);
-    }
-
-    spawnEnemies(count, forceType = null) {
-        for(let i=0; i<count; i++) {
-            let x, z;
-            do { x = (Math.random() - 0.5) * 800; z = (Math.random() - 0.5) * 800; } 
-            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 200);
-            let type = forceType;
-            if (!type) {
-                const rand = Math.random();
-                if (rand > 0.85) type = 'tank';
-                else if (rand > 0.70) type = 'aa_flak';
-                else type = 'infantry';
-            }
-            const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, this.audio, type);
-            let iconColor = 0xff0000; let iconSize = 3;
-            if (type === 'tank') { iconColor = 0xffaa00; iconSize = 6; }
-            else if (type === 'aa_flak') { iconColor = 0xffff00; iconSize = 5; }
-            const icon = new THREE.Mesh(new THREE.CircleGeometry(iconSize, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
-            icon.rotation.x = -Math.PI / 2; icon.layers.set(1);
-            this.scene.add(icon);
-            enemy.minimapIcon = icon;
-            this.enemies.push(enemy);
-        }
-    }
-
-    initMinimap() {
-        this.minimapSize = 80;
-        this.minimapCamera = new THREE.OrthographicCamera(-this.minimapSize, this.minimapSize, this.minimapSize, -this.minimapSize, 1, 1000);
-        this.minimapCamera.position.set(0, 200, 0);
-        this.minimapCamera.lookAt(0, 0, 0);
-        this.minimapCamera.up.set(0, 0, -1);
-        const arrowMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-        this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), arrowMat);
-        this.playerIcon.rotation.x = -Math.PI / 2;
-        this.playerIcon.layers.set(1);
-        this.scene.add(this.playerIcon);
-        this.initCompassLabels();
-    }
-
-    createTextTexture(text) {
-        const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
-        const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.font = 'Bold 48px Courier New';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 32, 32);
-        return new THREE.CanvasTexture(canvas);
-    }
-
-    initCompassLabels() {
-        this.compassLabels = {};
-        ['N', 'S', 'E', 'W'].forEach(label => {
-            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.createTextTexture(label) }));
-            sprite.scale.set(15, 15, 1); sprite.layers.set(1);
-            this.scene.add(sprite); this.compassLabels[label] = sprite;
-        });
-    }
-
     initLights() {
-        this.scene.add(new THREE.AmbientLight(0xd0e0e3, 0.4));
-        const sunLight = new THREE.DirectionalLight(0xfff5e6, 0.8);
-        sunLight.position.set(100, 150, 50); sunLight.castShadow = true;
-        sunLight.shadow.mapSize.width = 2048; sunLight.shadow.mapSize.height = 2048;
-        sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 500;
-        const d = 150; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.bias = -0.0005;
-        this.scene.add(sunLight);
+        this.ambientLight = new THREE.AmbientLight(0xd0e0e3, 0.4);
+        this.scene.add(this.ambientLight);
+        
+        this.sunLight = new THREE.DirectionalLight(0xfff5e6, 0.8);
+        this.sunLight.position.set(100, 150, 50);
+        this.sunLight.castShadow = true;
+        this.sunLight.shadow.mapSize.set(2048, 2048);
+        this.sunLight.shadow.camera.near = 0.5;
+        this.sunLight.shadow.camera.far = 500;
+        const d = 150;
+        this.sunLight.shadow.camera.left = -d; this.sunLight.shadow.camera.right = d;
+        this.sunLight.shadow.camera.top = d; this.sunLight.shadow.camera.bottom = -d;
+        this.scene.add(this.sunLight);
+    }
+
+    updateEnvironment(delta) {
+        this.timeOfDay += delta * this.daySpeed;
+        
+        // Sun movement
+        const sunX = Math.cos(this.timeOfDay) * 200;
+        const sunY = Math.sin(this.timeOfDay) * 200;
+        this.sunLight.position.set(sunX, sunY, 50);
+
+        // Day/Night logic
+        const isDay = sunY > 0;
+        const dayFactor = Math.max(0, Math.min(1, sunY / 50)); // Fade out as sun sets
+        
+        this.sunLight.intensity = dayFactor * 0.8;
+        this.ambientLight.intensity = 0.1 + (dayFactor * 0.3);
+
+        // Background & Fog color shift
+        const dayColor = new THREE.Color(0x8899a6);
+        const nightColor = new THREE.Color(0x050510);
+        const currentColor = dayColor.clone().lerp(nightColor, 1 - dayFactor);
+        
+        this.scene.background = currentColor;
+        this.scene.fog.color = currentColor;
+
+        // Searchlights activate at night
+        if (this.base) {
+            this.base.group.traverse(obj => {
+                if (obj.name === 'searchlight_beam') {
+                    obj.visible = !isDay || dayFactor < 0.3;
+                    obj.material.opacity = (1 - dayFactor) * 0.4;
+                }
+            });
+        }
     }
 
     initPhysicsMaterial() {
@@ -176,39 +152,62 @@ class Game {
         this.world.defaultContactMaterial = contactMat;
     }
 
+    spawnEnemies(count, forceType = null) {
+        for(let i=0; i<count; i++) {
+            let x, z;
+            do { x = (Math.random() - 0.5) * 800; z = (Math.random() - 0.5) * 800; } 
+            while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 200);
+            let type = forceType || (Math.random() > 0.85 ? 'tank' : (Math.random() > 0.70 ? 'aa_flak' : 'infantry'));
+            const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, this.audio, type);
+            const iconColor = type === 'tank' ? 0xffaa00 : (type === 'aa_flak' ? 0xffff00 : 0xff0000);
+            const icon = new THREE.Mesh(new THREE.CircleGeometry(type === 'tank' ? 6 : 3, 16), new THREE.MeshBasicMaterial({ color: iconColor }));
+            icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
+            enemy.minimapIcon = icon; this.enemies.push(enemy);
+        }
+    }
+
     spawnAllies(count) {
         for(let i=0; i<count; i++) {
             const x = -40 + (Math.random() - 0.5) * 40; const z = -40 + (Math.random() - 0.5) * 40;
             const ally = new Ally(this.scene, this.world, { x, y: 5, z });
             const icon = new THREE.Mesh(new THREE.CircleGeometry(2, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
-            icon.rotation.x = -Math.PI / 2; icon.layers.set(1);
-            this.scene.add(icon);
-            ally.minimapIcon = icon;
-            this.allies.push(ally);
+            icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
+            ally.minimapIcon = icon; this.allies.push(ally);
         }
+    }
+
+    initMinimap() {
+        this.minimapSize = 80;
+        this.minimapCamera = new THREE.OrthographicCamera(-this.minimapSize, this.minimapSize, this.minimapSize, -this.minimapSize, 1, 1000);
+        this.minimapCamera.position.set(0, 200, 0);
+        this.minimapCamera.lookAt(0, 0, 0);
+        this.minimapCamera.up.set(0, 0, -1);
+        this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+        this.playerIcon.rotation.x = -Math.PI / 2; this.playerIcon.layers.set(1); this.scene.add(this.playerIcon);
+        
+        this.compassLabels = {};
+        ['N', 'S', 'E', 'W'].forEach(label => {
+            const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.font = 'Bold 48px Courier New';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, 32, 32);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+            sprite.scale.set(15, 15, 1); sprite.layers.set(1); this.scene.add(sprite);
+            this.compassLabels[label] = sprite;
+        });
     }
 
     initUI() {
         const menu = document.getElementById('main-menu');
         const gameUI = document.getElementById('game-ui');
         const deployBtn = document.getElementById('btn-mission-1');
-        deployBtn.addEventListener('mouseenter', () => this.audio.play('ui_click'));
         deployBtn.addEventListener('click', () => {
-            this.audio.play('ui_click');
-            this.audio.startAudioContext(); 
-            deployBtn.innerText = "LOADING...";
-            deployBtn.disabled = true;
+            this.audio.play('ui_click'); this.audio.startAudioContext(); 
+            deployBtn.innerText = "LOADING..."; deployBtn.disabled = true;
             setTimeout(() => {
-                menu.classList.add('hidden');
-                gameUI.classList.remove('hidden');
+                menu.classList.add('hidden'); gameUI.classList.remove('hidden');
                 try { this.player.requestPointerLock(); } catch (e) {}
-                deployBtn.innerText = "DEPLOY NOW";
-                deployBtn.disabled = false;
+                deployBtn.innerText = "DEPLOY NOW"; deployBtn.disabled = false;
             }, 500);
-        });
-        document.getElementById('btn-tutorial').addEventListener('click', () => {
-            this.audio.play('ui_click');
-            alert('CONQUEST: Capture points ABLE, BAKER, and CHARLIE. Holding more points drains enemy tickets. First to 0 tickets loses.');
         });
         document.addEventListener('keydown', (e) => {
             if(e.key === 'Escape') { menu.classList.remove('hidden'); gameUI.classList.add('hidden'); document.exitPointerLock(); }
@@ -216,8 +215,7 @@ class Game {
         });
         document.addEventListener('mousedown', (e) => {
             if (this.activeVehicle && e.button === 2) { 
-                this.activeVehicle.isSniperMode = !this.activeVehicle.isSniperMode;
-                this.audio.play('ui_click');
+                this.activeVehicle.isSniperMode = !this.activeVehicle.isSniperMode; this.audio.play('ui_click');
             }
         });
         window.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -225,24 +223,17 @@ class Game {
 
     toggleVehicle() {
         if (this.activeVehicle) {
-            this.activeVehicle.isOccupied = false;
-            this.activeVehicle.isSniperMode = false;
+            this.activeVehicle.isOccupied = false; this.activeVehicle.isSniperMode = false;
             this.player.body.position.set(this.activeVehicle.body.position.x + 5, this.activeVehicle.body.position.y + 2, this.activeVehicle.body.position.z);
-            this.player.enabled = true;
-            this.activeVehicle = null;
-            this.audio.play('ui_click');
+            this.player.enabled = true; this.activeVehicle = null; this.audio.play('ui_click');
         } else {
             const nearbyTank = this.tanks.find(t => new CANNON.Vec3().copy(t.body.position).vsub(this.player.body.position).length() < 12);
             const nearbyHeli = this.helicopters.find(h => new CANNON.Vec3().copy(h.body.position).vsub(this.player.body.position).length() < 12);
-            if (nearbyTank) this.activeVehicle = nearbyTank;
-            else if (nearbyHeli) this.activeVehicle = nearbyHeli;
+            if (nearbyTank) this.activeVehicle = nearbyTank; else if (nearbyHeli) this.activeVehicle = nearbyHeli;
             if (this.activeVehicle) { 
-                this.activeVehicle.isOccupied = true; 
-                this.player.enabled = false; 
-                const targetPos = new THREE.Vector3();
-                this.activeVehicle.chaseCameraAnchor.getWorldPosition(targetPos);
-                this.player.camera.position.copy(targetPos);
-                this.audio.play('ui_click');
+                this.activeVehicle.isOccupied = true; this.player.enabled = false; 
+                const targetPos = new THREE.Vector3(); this.activeVehicle.chaseCameraAnchor.getWorldPosition(targetPos);
+                this.player.camera.position.copy(targetPos); this.audio.play('ui_click');
             }
         }
     }
@@ -259,30 +250,19 @@ class Game {
         const delta = this.clock.getDelta();
         this.world.step(1/60, delta, 10);
         this.base.update(delta, this.clock.elapsedTime);
+        this.updateEnvironment(delta);
 
-        // --- MISSION LOGIC: OBJECTIVES ---
-        let alliedPoints = 0;
-        let enemyPoints = 0;
-        this.objectives.forEach(obj => {
-            obj.update(delta, [this.player, ...this.allies], this.enemies);
-            if (obj.owner === 'allied') alliedPoints++;
-            else if (obj.owner === 'enemy') enemyPoints++;
-        });
-
-        // Ticket Bleed
+        this.objectives.forEach(obj => obj.update(delta, [this.player, ...this.allies], this.enemies));
+        let alliedPoints = this.objectives.filter(o => o.owner === 'allied').length;
+        let enemyPoints = this.objectives.filter(o => o.owner === 'enemy').length;
         if (enemyPoints > alliedPoints) this.alliedTickets -= (enemyPoints - alliedPoints) * delta * 2;
         if (alliedPoints > enemyPoints) this.enemyTickets -= (alliedPoints - enemyPoints) * delta * 2;
-
         if (this.alliedTickets <= 0 || this.enemyTickets <= 0) this.endGame();
 
         const currentY = this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y;
         this.audio.updateAltitudeEffects(currentY);
 
-        this.waveTimer += delta;
-        if (this.waveTimer >= this.waveInterval) { this.spawnReinforcements(); this.waveTimer = 0; }
-
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
-        if (this.player.body.position.y < -15) { this.player.body.position.set(0, 10, 0); this.player.body.velocity.set(0, 0, 0); }
         if (this.activeVehicle) {
             this.activeVehicle.update(delta, this.player.moveState, this.player.camera);
             const targetPos = new THREE.Vector3();
@@ -295,23 +275,20 @@ class Game {
                 this.player.camera.quaternion.slerp(targetRot, 0.2);
             } else {
                 const lookAtPos = new THREE.Vector3();
-                if (this.activeVehicle instanceof Tank) { this.activeVehicle.turretGroup.getWorldPosition(lookAtPos); }
-                else { this.activeVehicle.group.getWorldPosition(lookAtPos); }
+                if (this.activeVehicle instanceof Tank) this.activeVehicle.turretGroup.getWorldPosition(lookAtPos);
+                else this.activeVehicle.group.getWorldPosition(lookAtPos);
                 this.player.camera.lookAt(lookAtPos);
             }
             this.player.body.position.copy(this.activeVehicle.body.position);
         } else { this.player.update(delta, this.terrain); }
+
         const playerPos = this.activeVehicle ? this.activeVehicle.body.position : this.player.body.position;
         this.enemies.forEach((enemy, index) => {
             enemy.update(delta, playerPos, this.player);
-            if (enemy.minimapIcon) {
-                enemy.minimapIcon.position.set(enemy.body.position.x, 100, enemy.body.position.z);
-                if (enemy.isDead) this.scene.remove(enemy.minimapIcon);
-            }
-            if (enemy.isDead && !enemy.group.parent) this.enemies.splice(index, 1);
+            if (enemy.minimapIcon) enemy.minimapIcon.position.set(enemy.body.position.x, 100, enemy.body.position.z);
+            if (enemy.isDead && enemy.minimapIcon) { this.scene.remove(enemy.minimapIcon); enemy.minimapIcon = null; }
         });
 
-        // --- UPDATE HUD ---
         document.getElementById('health').innerText = `HP: ${Math.ceil(this.player.health)}`;
         document.getElementById('ammo').innerText = `TICKETS: ALLY ${Math.ceil(this.alliedTickets)} | AXIS ${Math.ceil(this.enemyTickets)}`;
         
@@ -319,11 +296,13 @@ class Game {
         const camEuler = new THREE.Euler().setFromQuaternion(this.player.camera.quaternion, 'YXZ');
         this.playerIcon.rotation.z = camEuler.y;
         this.minimapCamera.position.set(playerPos.x, 200, playerPos.z);
-        const labelDist = this.minimapSize * 0.85;
-        this.compassLabels['N'].position.set(playerPos.x, 150, playerPos.z - labelDist);
-        this.compassLabels['S'].position.set(playerPos.x, 150, playerPos.z + labelDist);
-        this.compassLabels['E'].position.set(playerPos.x + labelDist, 150, playerPos.z);
-        this.compassLabels['W'].position.set(playerPos.x - labelDist, 150, playerPos.z);
+        ['N', 'S', 'E', 'W'].forEach(l => {
+            const dist = 68;
+            if(l==='N') this.compassLabels[l].position.set(playerPos.x, 150, playerPos.z - dist);
+            if(l==='S') this.compassLabels[l].position.set(playerPos.x, 150, playerPos.z + dist);
+            if(l==='E') this.compassLabels[l].position.set(playerPos.x + dist, 150, playerPos.z);
+            if(l==='W') this.compassLabels[l].position.set(playerPos.x - dist, 150, playerPos.z);
+        });
 
         this.player.camera.layers.set(0); this.renderer.render(this.scene, this.player.camera);
         this.minimapCamera.layers.enable(0); this.minimapCamera.layers.enable(1);
@@ -340,7 +319,7 @@ class Game {
         endScreen.style.display = 'flex'; endScreen.style.flexDirection = 'column';
         endScreen.style.justifyContent = 'center'; endScreen.style.alignItems = 'center';
         endScreen.style.zIndex = '1000'; endScreen.style.fontFamily = 'Courier New';
-        endScreen.innerHTML = `<h1>${victory ? 'MISSION ACCOMPLISHED' : 'MISSION FAILED'}</h1><p>Final Score: ${Math.ceil(this.alliedTickets)}</p><button onclick="location.reload()" style="background:#222;color:#fff;border:1px solid #fff;padding:10px 20px;cursor:pointer">REDEPLOY</button>`;
+        endScreen.innerHTML = `<h1>${victory ? 'MISSION ACCOMPLISHED' : 'MISSION FAILED'}</h1><button onclick="location.reload()" style="background:#222;color:#fff;border:1px solid #fff;padding:10px 20px;cursor:pointer">REDEPLOY</button>`;
         document.body.appendChild(endScreen);
         document.exitPointerLock();
     }
