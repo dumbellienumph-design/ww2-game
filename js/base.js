@@ -138,8 +138,8 @@ export class Base {
     }
 
     createSpawnPad() {
-        const pad = new THREE.Mesh(new THREE.BoxGeometry(12, 0.2, 12), this.concreteMat);
-        pad.position.set(0, 0.1, 0);
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(15, 0.2, 15), this.concreteMat);
+        pad.position.set(0, 0.1, 45); // Centered at local 0, 45
         this.group.add(pad);
     }
 

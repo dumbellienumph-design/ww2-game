@@ -77,7 +77,7 @@ class Game {
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         this.particles = new ParticleSystem(this.scene);
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
-        this.player.body.position.set(-50, 5, -50); 
+        this.player.body.position.set(-50, 5, -5); 
 
         this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, null, this.particles);
         this.objectives = [
