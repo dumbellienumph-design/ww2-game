@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { Grenade } from './grenade.js';
 
 export class Player {
     constructor(scene, world, domElement, audio, particles) {
@@ -23,7 +24,6 @@ export class Player {
             jump: false, shoot: false, ads: false
         };
 
-        // --- 6.3 AMMO LOGISTICS ---
         this.weapons = [
             { 
                 name: 'Kar98k', type: 'bolt', damage: 150, fireRate: 1.5, 
@@ -42,10 +42,14 @@ export class Player {
             }
         ];
         this.currentWeaponIndex = 0;
+        
+        // --- 6.4 GRENADE LOGISTICS ---
+        this.grenades = 3;
+        this.grenadeList = [];
+
         this.fireTimer = 0;
         this.reloadTimer = 0;
         this.isReloading = false;
-        
         this.adsFactor = 0;
 
         this.initPhysics();
@@ -88,8 +92,9 @@ export class Player {
             if(e.code === 'Digit1') this.switchWeapon(0);
             if(e.code === 'Digit2') this.switchWeapon(1);
             if(e.code === 'Digit3') this.switchWeapon(2);
-            // --- 6.3 RELOAD KEY ---
             if(e.code === 'KeyR') this.reload();
+            // --- 6.4 GRENADE KEY ---
+            if(e.code === 'KeyG') this.throwGrenade();
         });
         document.addEventListener('keyup', (e) => this.onKey(e.code, false));
         
@@ -120,18 +125,27 @@ export class Player {
     reload() {
         const weapon = this.weapons[this.currentWeaponIndex];
         if (this.isReloading || weapon.ammo === weapon.capacity || weapon.reserve <= 0) return;
-
         this.isReloading = true;
         this.reloadTimer = weapon.reloadTime;
         this.moveState.ads = false;
+        if(this.audio) this.audio.play('rifle_cycle');
+    }
 
-        // Mechanical Reload Audio
-        if(this.audio) {
-            this.audio.play('rifle_cycle'); // generic mechanical sound for start
-            if (weapon.name === 'M1 Garand' && weapon.ammo === 0) {
-                // Ping is handled in shoot() for Garand, but here we could add clip insert
-            }
-        }
+    throwGrenade() {
+        if (this.grenades <= 0 || this.isReloading) return;
+        
+        this.grenades--;
+        if(this.audio) this.audio.play('ui_click');
+
+        const throwPos = this.camera.position.clone();
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        // Add a bit of upward arc
+        dir.y += 0.2;
+        dir.normalize();
+        
+        const velocity = dir.multiplyScalar(25); // Fast stick throw
+        const grenade = new Grenade(this.scene, this.world, throwPos, velocity, this.audio);
+        this.grenadeList.push(grenade);
     }
 
     onKey(code, isPressed) {
@@ -192,19 +206,13 @@ export class Player {
     shoot() {
         if (this.isReloading) return;
         const weapon = this.weapons[this.currentWeaponIndex];
-        
-        if (weapon.ammo <= 0) { 
-            if(this.audio) this.audio.play('ui_click'); 
-            return; 
-        }
-        
+        if (weapon.ammo <= 0) { if(this.audio) this.audio.play('ui_click'); return; }
         weapon.ammo--;
 
-        // --- ICONIC GARAND PING ---
         if (weapon.name === 'M1 Garand' && weapon.ammo === 0) {
             if(this.audio) {
                 this.audio.play('rifle_fire', { randomPitch: true });
-                setTimeout(() => this.audio.play('ui_click'), 100); // Temporary "Ping" surrogate
+                setTimeout(() => this.audio.play('ui_click'), 100); 
             }
         } else if(this.audio) {
             this.audio.play('rifle_fire', { randomPitch: true });
@@ -251,7 +259,6 @@ export class Player {
 
         const weapon = this.weapons[this.currentWeaponIndex];
 
-        // --- RELOAD TIMER LOGIC ---
         if (this.isReloading) {
             this.reloadTimer -= delta;
             if (this.reloadTimer <= 0) {
@@ -264,13 +271,17 @@ export class Player {
             }
         }
 
+        // --- GRENADE LIST UPDATE ---
+        this.grenadeList.forEach((g, i) => {
+            g.update(delta);
+            if (g.isExploded) this.grenadeList.splice(i, 1);
+        });
+
         const targetAdsFactor = this.moveState.ads ? 1.0 : 0;
         this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
 
         const hipPos = new THREE.Vector3(0.3, -0.3, -0.5);
         const adsPos = new THREE.Vector3(0, -0.12, -0.3);
-        
-        // Hide gun during reload
         if (this.isReloading) {
             const reloadHidePos = new THREE.Vector3(0.3, -1.0, -0.5);
             this.gunGroup.position.lerp(reloadHidePos, 0.1);
