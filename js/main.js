@@ -63,6 +63,9 @@ class Game {
             "https://images.unsplash.com/photo-1440439603332-159e99298f3c?auto=format&fit=crop&q=80&w=1920",
             "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&q=80&w=1920"
         ];
+
+        this.activeRadius = 150; // Dynamic culling radius
+        this.cullingTimer = 0;
         
         this.initUI();
         
@@ -108,7 +111,7 @@ class Game {
                 bgElement.style.backgroundImage = `url('${this.loadingImages[imgIndex]}')`;
                 tipElement.style.opacity = 1;
             }, 500);
-        }, 3500); // Slightly faster cycling
+        }, 3500); 
     }
 
     async loadGame() {
@@ -141,7 +144,6 @@ class Game {
         updateUI(15, "ANTHEM BROADCASTING...");
 
         // --- STEP 2: PARALLEL ASSET LOADING (15-60%) ---
-        // We load all heavy sounds at once to save time
         updateUI(16, "BUFFERING COMBAT SOUNDSCAPES...");
         const soundAssets = [
             ['action_theme', 'https://cdn.freesound.org/previews/267/267528_4221199-lq.mp3', false, true, 0.6],
@@ -325,6 +327,32 @@ class Game {
         if (this.scene.fog) this.scene.fog.color = currentColor;
     }
 
+    updateCulling() {
+        if (!this.player || !this.isLoaded) return;
+        const playerPos = this.player.body.position;
+
+        // 1. Culling Vegetation (Trees/Bushes)
+        if (this.vegetation && this.vegetation.objects) {
+            this.vegetation.objects.forEach(obj => {
+                const distSq = playerPos.distanceSquared(obj.body.position);
+                const shouldBeActive = distSq < this.activeRadius * this.activeRadius;
+
+                if (shouldBeActive && !obj.active) {
+                    this.scene.add(obj.mesh);
+                    this.world.addBody(obj.body);
+                    obj.active = true;
+                } else if (!shouldBeActive && obj.active) {
+                    this.scene.remove(obj.mesh);
+                    this.world.removeBody(obj.body);
+                    obj.active = false;
+                }
+            });
+        }
+
+        // 2. Culling Dynamic Units (Except those you might need to track)
+        // For simplicity, we only cull vegetation for now as it's the biggest count.
+    }
+
     animate() {
         if (this.isGameOver) return;
         requestAnimationFrame(() => this.animate());
@@ -333,6 +361,12 @@ class Game {
         if (!this.isLoaded) {
             this.renderer.render(this.scene, this.tempCamera);
             return;
+        }
+
+        this.cullingTimer += delta;
+        if (this.cullingTimer > 0.5) { // Update culling twice a second
+            this.updateCulling();
+            this.cullingTimer = 0;
         }
 
         this.world.step(1/60, delta, 10);
@@ -348,6 +382,7 @@ class Game {
         if (this.alliedTickets <= 0 || this.enemyTickets <= 0) this.endGame();
 
         this.audio.updateAltitudeEffects(this.activeVehicle ? this.activeVehicle.body.position.y : this.player.body.position.y);
+        
         this.world.bodies.forEach(body => { if(body.mesh) { body.mesh.position.copy(body.position); body.mesh.quaternion.copy(body.quaternion); } });
         
         if (this.activeVehicle) {

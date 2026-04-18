@@ -10,12 +10,13 @@ export class Vegetation {
         this.treeCount = 100;
         this.bushCount = 150;
         this.grassCount = 30000;
+
+        this.objects = []; // List to track all trees and bushes
         
         this.init();
     }
 
     isNearBase(x, z) {
-        // Base area: Roughly centered at -50, -50 with a radius of 75 to be safe
         const dx = x - (-50);
         const dz = z - (-50);
         return (dx * dx + dz * dz) < 75 * 75;
@@ -64,10 +65,12 @@ export class Vegetation {
             leaves.position.y = trunkHeight * 0.7 + j * 1.5;
             group.add(leaves);
         }
-        this.scene.add(group);
+        
         const trunkShape = new CANNON.Cylinder(0.5, 0.5, trunkHeight, 8);
         const trunkBody = new CANNON.Body({ mass: 0, shape: trunkShape, position: new CANNON.Vec3(x, y + trunkHeight / 2, z)});
-        this.world.addBody(trunkBody);
+        
+        // Initial state: not added to world/scene yet (main.js handles it)
+        this.objects.push({ mesh: group, body: trunkBody, active: false });
     }
 
     createBush(x, y, z, bushMat) {
@@ -81,10 +84,11 @@ export class Vegetation {
             sphere.scale.set(1, 0.7, 1);
             group.add(sphere);
         }
-        this.scene.add(group);
+        
         const bushShape = new CANNON.Sphere(size * 0.8);
         const bushBody = new CANNON.Body({ mass: 0, shape: bushShape, position: new CANNON.Vec3(x, y + size * 0.4, z)});
-        this.world.addBody(bushBody);
+        
+        this.objects.push({ mesh: group, body: bushBody, active: false });
     }
 
     createGrass() {
@@ -146,5 +150,6 @@ export class Vegetation {
 
         instancedMesh.instanceMatrix.needsUpdate = true;
         this.scene.add(instancedMesh);
+        this.grass = instancedMesh;
     }
 }
