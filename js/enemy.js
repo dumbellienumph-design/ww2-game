@@ -120,7 +120,14 @@ export class Enemy {
         if (this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_fire', { randomPitch: true });
         
         const startPos = this.group.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-        const dir = new THREE.Vector3().subVectors(targetPos, startPos).normalize();
+        // Add slight inaccuracy to allow near-misses (suppression)
+        const inaccuracy = 0.05;
+        const target = targetPos.clone().add(new THREE.Vector3(
+            (Math.random() - 0.5) * inaccuracy * 50,
+            (Math.random() - 0.5) * inaccuracy * 20,
+            (Math.random() - 0.5) * inaccuracy * 50
+        ));
+        const dir = new THREE.Vector3().subVectors(target, startPos).normalize();
 
         const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({color: 0xff0000}));
         bullet.position.copy(startPos);
@@ -131,11 +138,19 @@ export class Enemy {
             if (Date.now() - startTime > 2000 || this.isDead) { this.scene.remove(bullet); return; }
             bullet.position.add(dir.clone().multiplyScalar(1.5));
             
-            if (bullet.position.distanceTo(player.body.position) < 1.5) {
+            // Check for hit
+            const distToPlayer = bullet.position.distanceTo(player.camera.position);
+            if (distToPlayer < 1.5) {
                 player.takeDamage(10);
                 this.scene.remove(bullet);
                 return;
             }
+
+            // Check for NEAR MISS (Suppression)
+            if (distToPlayer < 4.0) {
+                player.suppress(0.1);
+            }
+
             requestAnimationFrame(anim);
         };
         anim();

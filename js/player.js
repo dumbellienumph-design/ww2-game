@@ -12,7 +12,6 @@ export class Player {
         
         this.baseFOV = 75;
         this.camera = new THREE.PerspectiveCamera(this.baseFOV, window.innerWidth / window.innerHeight, 0.1, 1000);
-        // FPS standard: YXZ order prevents world flipping
         this.camera.rotation.order = 'YXZ';
         this.camera.layers.enable(1); 
 
@@ -59,9 +58,12 @@ export class Player {
         this.bobTimer = 0;
         this.sway = new THREE.Vector3(0,0,0);
 
-        // Rotation tracking (in radians)
         this.pitch = 0;
         this.yaw = 0;
+
+        // --- SUPPRESSION STATE ---
+        this.suppression = 0; // 0 to 1
+        this.suppressionOverlay = document.getElementById('suppression-overlay');
 
         this.initPhysics();
         this.initControls();
@@ -90,13 +92,11 @@ export class Player {
     initControls() {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === this.domElement) {
-                const sensitivity = this.moveState.ads ? 0.001 : 0.002;
+                const sensitivity = (this.moveState.ads ? 0.001 : 0.002) * (1 - this.suppression * 0.5);
                 
-                // standard mouse look
                 this.yaw -= e.movementX * sensitivity;
                 this.pitch -= e.movementY * sensitivity;
                 
-                // clamp pitch to avoid flipping over
                 this.pitch = Math.max(-Math.PI / 2.1, Math.min(Math.PI / 2.1, this.pitch));
                 
                 this.sway.x = -e.movementX * 0.0003;
@@ -114,7 +114,7 @@ export class Player {
             if(e.code === 'KeyZ') this.moveState.prone = !this.moveState.prone;
             if(e.code === 'KeyC') this.moveState.crouch = !this.moveState.crouch;
         });
-        document.addEventListener('keyup', (e) => this.onKey(e.code, false));
+        document.addEventListener('keyup', (e) => this.onKey(code, false));
         
         document.addEventListener('mousedown', (e) => {
             if (document.pointerLockElement === this.domElement) {
@@ -128,6 +128,22 @@ export class Player {
                 if(e.button === 2) this.moveState.ads = false;
             }
         });
+    }
+
+    onKey(code, isPressed) {
+        switch (code) {
+            case 'KeyW': this.moveState.forward = isPressed; break;
+            case 'KeyS': this.moveState.backward = isPressed; break;
+            case 'KeyA': this.moveState.left = isPressed; break;
+            case 'KeyD': this.moveState.right = isPressed; break;
+            case 'KeyQ': this.moveState.leanLeft = isPressed; break;
+            case 'KeyE': this.moveState.leanRight = isPressed; break;
+            case 'Space': this.moveState.jump = isPressed; break;
+        }
+    }
+
+    suppress(amount) {
+        this.suppression = Math.min(1.0, this.suppression + amount);
     }
 
     switchWeapon(index) {
@@ -156,18 +172,6 @@ export class Player {
         const velocity = dir.multiplyScalar(25);
         const grenade = new Grenade(this.scene, this.world, throwPos, velocity, this.audio);
         this.grenadeList.push(grenade);
-    }
-
-    onKey(code, isPressed) {
-        switch (code) {
-            case 'KeyW': this.moveState.forward = isPressed; break;
-            case 'KeyS': this.moveState.backward = isPressed; break;
-            case 'KeyA': this.moveState.left = isPressed; break;
-            case 'KeyD': this.moveState.right = isPressed; break;
-            case 'KeyQ': this.moveState.leanLeft = isPressed; break;
-            case 'KeyE': this.moveState.leanRight = isPressed; break;
-            case 'Space': this.moveState.jump = isPressed; break;
-        }
     }
 
     initWeaponVisuals() {
@@ -204,6 +208,7 @@ export class Player {
 
     takeDamage(amount) {
         this.health -= amount;
+        this.suppress(0.3); // Getting hit causes major suppression
         if (this.health <= 0) {
             this.health = 0;
             this.body.position.set(-50, 5, -5);
@@ -229,7 +234,7 @@ export class Player {
         if (weapon.ammo <= 0) { return; }
         weapon.ammo--;
         
-        const recoilAmount = this.moveState.ads ? 0.02 : 0.05;
+        const recoilAmount = (this.moveState.ads ? 0.02 : 0.05) * (1 + this.suppression);
         this.gunGroup.position.z += recoilAmount;
         this.gunGroup.rotation.x += recoilAmount * 0.5;
         
@@ -284,6 +289,17 @@ export class Player {
             }
         }
 
+        // SUPPRESSION DECAY
+        this.suppression = Math.max(0, this.suppression - delta * 0.5);
+        if (this.suppressionOverlay) {
+            if (this.suppression > 0.1) {
+                this.suppressionOverlay.classList.add('active');
+                this.suppressionOverlay.style.boxShadow = `inset 0 0 ${this.suppression * 300}px rgba(0, 0, 0, ${0.5 + this.suppression * 0.5}), inset 0 0 50px rgba(255, 0, 0, ${this.suppression * 0.2})`;
+            } else {
+                this.suppressionOverlay.classList.remove('active');
+            }
+        }
+
         this.grenadeList.forEach((g, i) => {
             g.update(delta);
             if (g.isExploded) this.grenadeList.splice(i, 1);
@@ -314,8 +330,10 @@ export class Player {
         this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
 
         // --- CAMERA ROTATION (PROPER FPS) ---
-        // Apply pitch/yaw/lean in one pass
-        this.camera.rotation.set(this.pitch, this.yaw, this.leanAngle);
+        // Apply suppression shake
+        const shakeX = (Math.random() - 0.5) * this.suppression * 0.05;
+        const shakeY = (Math.random() - 0.5) * this.suppression * 0.05;
+        this.camera.rotation.set(this.pitch + shakeY, this.yaw + shakeX, this.leanAngle);
 
         // MOVEMENT
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
@@ -358,8 +376,10 @@ export class Player {
         const bobOffset = Math.sin(this.bobTimer) * (currentSpeed > 0 ? 0.04 : 0.01) * (1 - this.adsFactor * 0.8);
         const bobSide = Math.cos(this.bobTimer * 0.5) * (currentSpeed > 0 ? 0.02 : 0) * (1 - this.adsFactor * 0.8);
 
-        const hipPos = new THREE.Vector3(0.3 + this.sway.x + bobSide, -0.3 + this.sway.y + Math.abs(bobOffset), -0.5);
-        const adsPos = new THREE.Vector3(0 + this.sway.x * 0.1, -0.12 + this.sway.y * 0.1, -0.3);
+        // Increase sway intensity with suppression
+        const suppressionSway = Math.sin(Date.now() * 0.005) * this.suppression * 0.1;
+        const hipPos = new THREE.Vector3(0.3 + this.sway.x + bobSide + suppressionSway, -0.3 + this.sway.y + Math.abs(bobOffset), -0.5);
+        const adsPos = new THREE.Vector3(0 + this.sway.x * 0.1 + suppressionSway * 0.2, -0.12 + this.sway.y * 0.1, -0.3);
         
         this.gunGroup.rotation.x = THREE.MathUtils.lerp(this.gunGroup.rotation.x, 0, 0.1);
 
