@@ -37,14 +37,18 @@ class Game {
         this.initPhysicsMaterial();
         this.terrain = new Terrain(this.scene, this.world);
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
-        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 });
         
-        this.player = new Player(this.scene, this.world, this.renderer.domElement);
+        // --- PLAYER SETUP ---
+        // Pass audio to player for local weapon sounds
+        this.player = new Player(this.scene, this.world, this.renderer.domElement, null); // Will update after audio init
         this.player.body.position.set(-50, 5, -50); 
 
         // --- AUDIO SYSTEM ---
         this.audio = new AudioManager(this.player.camera);
+        this.player.audio = this.audio; // Update player reference
         this.initAudio();
+
+        this.base = new Base(this.scene, this.world, { x: -50, y: 0, z: -50 }, this.audio);
 
         this.tanks = [
             new Tank(this.scene, this.world, { x: -20, y: 5, z: -80 }, this.audio), 
@@ -71,15 +75,22 @@ class Game {
         await this.audio.loadSound('anthem', 'https://cdn.freesound.org/previews/235/235653_3534964-lq.mp3', false, true, 0.5);
         await this.audio.loadSound('ui_click', 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3', false, false, 0.4);
 
-        // 2. Mechanical Layer (Tank)
+        // 2. Mechanical Layer (Weapons)
+        // Realistic Rifle Report
+        await this.audio.loadSound('rifle_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8);
+        // Bolt Cycling Sound
+        await this.audio.loadSound('rifle_cycle', 'https://cdn.freesound.org/previews/218/218151_2210086-lq.mp3', false, false, 0.6);
+        // Supersonic Whiz (If bullet passes close)
+        await this.audio.loadSound('bullet_whiz', 'https://cdn.freesound.org/previews/192/192138_1066060-lq.mp3', false, false, 0.5);
+
+        // 3. Mechanical Layer (Vehicles)
         await this.audio.loadSound('tank_engine', 'https://cdn.freesound.org/previews/320/320661_5250656-lq.mp3', false, true, 0.6);
         await this.audio.loadSound('tank_fire', 'https://cdn.freesound.org/previews/146/146747_2437358-lq.mp3', false, false, 0.8);
-
-        // 3. Mechanical Layer (Helicopter)
-        // High frequency rotor whir
         await this.audio.loadSound('heli_engine', 'https://cdn.freesound.org/previews/337/337346_4221199-lq.mp3', false, true, 0.6);
-        // Rapid Machine Gun
         await this.audio.loadSound('heli_fire', 'https://cdn.freesound.org/previews/253/253381_4474943-lq.mp3', false, false, 0.5);
+
+        // 4. Ambient Layer
+        await this.audio.loadSound('base_hum', 'https://cdn.freesound.org/previews/212/212134_4083377-lq.mp3', true, true, 0.3);
     }
 
     initMinimap() {
@@ -145,7 +156,7 @@ class Game {
             let x, z;
             do { x = (Math.random() - 0.5) * 400; z = (Math.random() - 0.5) * 400; } 
             while (Math.sqrt((x - (-50))**2 + (z - (-50))**2) < 100);
-            const enemy = new Enemy(this.scene, this.world, { x, y: 20, z });
+            const enemy = new Enemy(this.scene, this.world, { x, y: 20, z }, this.audio);
             const icon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1);
             this.scene.add(icon);

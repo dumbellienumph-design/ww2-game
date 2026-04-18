@@ -2,62 +2,55 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 export class Player {
-    constructor(scene, world, domElement) {
+    constructor(scene, world, domElement, audio) {
         this.scene = scene;
         this.world = world;
         this.domElement = domElement;
-
+        this.audio = audio;
+        
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(0, 1.7, 0);
+        this.camera.layers.enable(1); 
+
+        this.walkSpeed = 8;
+        this.canJump = true;
+        this.health = 100;
+        this.ammo = 30;
+        this.enabled = true;
+        
+        this.moveState = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false,
+            jump: false,
+            shoot: false
+        };
+
+        this.fireRate = 0.6; // Bolt action delay
+        this.fireTimer = 0;
 
         this.initPhysics();
         this.initControls();
         this.initWeapon();
-
-        this.moveState = { 
-            forward: false, backward: false, left: false, right: false, 
-            shoot: false, jump: false, crouch: false 
-        };
-        this.canJump = false;
-        this.health = 100;
-        this.ammo = 30;
-        this.enabled = true;
-        this.walkSpeed = 10;
-
-        this.fireRate = 0.1;
-        this.fireTimer = 0;
     }
 
     initPhysics() {
         const radius = 0.5;
         const playerMaterial = new CANNON.Material('player');
-        
         this.shape = new CANNON.Sphere(radius);
         this.body = new CANNON.Body({
-            mass: 100, 
-            shape: this.shape,
-            fixedRotation: true,
-            linearDamping: 0.5, // Increased damping to prevent sliding on physics floors
+            mass: 100, shape: this.shape,
+            fixedRotation: true, linearDamping: 0.5,
             material: playerMaterial,
             position: new CANNON.Vec3(0, 10, 0)
         });
-        
         this.world.addBody(this.body);
-
-        // Ground detection for jumping
         this.body.addEventListener('collide', (e) => {
             const contactNormal = new CANNON.Vec3();
             e.contact.ni.negate(contactNormal);
-            if (contactNormal.y > 0.5) {
-                this.canJump = true;
-            }
+            if (contactNormal.y > 0.5) { this.canJump = true; }
         });
-
-        this.world.addContactMaterial(new CANNON.ContactMaterial(
-            playerMaterial,
-            this.world.defaultContactMaterial,
-            { friction: 0.8, restitution: 0.0 }
-        ));
+        this.world.addContactMaterial(new CANNON.ContactMaterial(playerMaterial, this.world.defaultContactMaterial, { friction: 0.8, restitution: 0.0 }));
     }
 
     initControls() {
@@ -73,10 +66,10 @@ export class Player {
         document.addEventListener('keydown', (e) => this.onKey(e.code, true));
         document.addEventListener('keyup', (e) => this.onKey(e.code, false));
         document.addEventListener('mousedown', (e) => {
-            if (document.pointerLockElement === this.domElement) this.moveState.shoot = true;
+            if (document.pointerLockElement === this.domElement && e.button === 0) this.moveState.shoot = true;
         });
         document.addEventListener('mouseup', (e) => {
-            if (document.pointerLockElement === this.domElement) this.moveState.shoot = false;
+            if (document.pointerLockElement === this.domElement && e.button === 0) this.moveState.shoot = false;
         });
     }
 
@@ -116,24 +109,39 @@ export class Player {
         this.health -= amount;
         if (this.health <= 0) {
             this.health = 0;
-            // Handle death - for now just reset position
             this.body.position.set(-50, 5, -50);
             this.health = 100;
         }
     }
 
     shoot() {
-        if (this.ammo <= 0) { this.ammo = 30; return; }
+        if (this.ammo <= 0) { 
+            if(this.audio) this.audio.play('ui_click'); // Out of ammo sound
+            return; 
+        }
         this.ammo--;
-        this.gunGroup.position.z += 0.03;
-        setTimeout(() => this.gunGroup.position.z -= 0.03, 40);
+
+        // --- AUDIO: REALISTIC RIFLE SEQUENCE ---
+        if(this.audio) {
+            // 1. Muzzle Blast (with random pitch for variance)
+            this.audio.play('rifle_fire', { randomPitch: true });
+            
+            // 2. Mechanical Bolt Cycle (Delayed by 200ms)
+            setTimeout(() => {
+                this.audio.play('rifle_cycle');
+            }, 250);
+        }
+
+        this.gunGroup.position.z += 0.05;
+        setTimeout(() => this.gunGroup.position.z -= 0.05, 50);
+
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
         const intersects = raycaster.intersectObjects(this.scene.children, true);
         if (intersects.length > 0) {
             const hit = intersects[0];
             const hitBody = this.findPhysicsBody(hit.object);
-            if (hitBody && hitBody.onHit) hitBody.onHit(10);
+            if (hitBody && hitBody.onHit) hitBody.onHit(15);
         }
     }
 
@@ -177,7 +185,6 @@ export class Player {
 
         if (moveDir.length() > 0) {
             moveDir.normalize();
-            // Use velocity assignment but preserve Y (gravity)
             const currentY = this.body.velocity.y;
             this.body.velocity.x = moveDir.x * this.walkSpeed;
             this.body.velocity.z = moveDir.z * this.walkSpeed;
@@ -192,9 +199,8 @@ export class Player {
             this.canJump = false;
         }
 
-        // Align camera with physics body
         this.camera.position.x = this.body.position.x;
-        this.camera.position.y = this.body.position.y + 0.7; // Eye level
+        this.camera.position.y = this.body.position.y + 0.7;
         this.camera.position.z = this.body.position.z;
     }
 }

@@ -19,6 +19,14 @@ export class AudioManager {
                 audio.setBuffer(buffer);
                 audio.setLoop(loop);
                 audio.setVolume(volume * this.globalVolume);
+                
+                // Add realistic distance model for 3D sounds
+                if (isPositional) {
+                    audio.setRefDistance(5);
+                    audio.setMaxDistance(100);
+                    audio.setRolloffFactor(1);
+                }
+
                 this.sounds.set(name, audio);
                 resolve(audio);
             });
@@ -27,43 +35,38 @@ export class AudioManager {
 
     startAudioContext() {
         if (this.isAudioContextStarted) return;
-        
         const context = THREE.AudioContext.getContext();
-        if (context.state === 'suspended') {
-            context.resume();
-        }
+        if (context.state === 'suspended') { context.resume(); }
         this.isAudioContextStarted = true;
-        
-        // Start background music once context is ready
         this.play('anthem');
     }
 
-    play(name) {
+    play(name, options = {}) {
         const sound = this.sounds.get(name);
-        if (sound && !sound.isPlaying) {
-            sound.play();
+        if (!sound) return;
+
+        // Reset and play for non-looping sounds
+        if (sound.isPlaying && !sound.loop) {
+            sound.stop();
         }
+        
+        // Dynamic pitch variation for realism (random +/- 5%)
+        if (options.randomPitch) {
+            const p = 1.0 + (Math.random() - 0.5) * 0.1;
+            sound.setPlaybackRate(p);
+        }
+
+        sound.play();
     }
 
     stop(name) {
         const sound = this.sounds.get(name);
-        if (sound && sound.isPlaying) {
-            sound.stop();
-        }
-    }
-
-    setVolume(name, volume) {
-        const sound = this.sounds.get(name);
-        if (sound) {
-            sound.setVolume(volume * this.globalVolume);
-        }
+        if (sound && sound.isPlaying) { sound.stop(); }
     }
 
     setPlaybackRate(name, rate) {
         const sound = this.sounds.get(name);
-        if (sound && sound.isPlaying) {
-            sound.setPlaybackRate(rate);
-        }
+        if (sound && sound.isPlaying) { sound.setPlaybackRate(rate); }
     }
 
     createPositionalSource(name, mesh) {
