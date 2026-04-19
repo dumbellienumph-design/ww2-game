@@ -6,8 +6,8 @@ export class Terrain {
         this.scene = scene;
         this.world = world;
         
-        this.size = 600; // Slightly larger for border walls
-        this.resolution = 64; 
+        this.size = 800; 
+        this.resolution = 128; // Higher resolution for better mountains
         
         this.init();
     }
@@ -16,27 +16,30 @@ export class Terrain {
         const geometry = new THREE.PlaneGeometry(this.size, this.size, this.resolution, this.resolution);
         const vertices = geometry.attributes.position.array;
 
-        // Create heightmap logic
+        // --- RESTORE MOUNTAINS & LEVEL BASES ---
         for (let i = 0; i < vertices.length; i += 3) {
             const x = vertices[i];
             const z = vertices[i + 1];
             
-            // --- NEW: TERRAIN LEVELING LOGIC ---
-            // Base 1 (Player) Area: -100 to 0
-            const distToPlayerBase = Math.sqrt((x - (-50))**2 + (z - (-50))**2);
-            // Base 2 (Enemy) Area: 100 to 200
-            const distToEnemyBase = Math.sqrt((x - 150)**2 + (z - 150)**2);
+            // Base Locations
+            const distToAlliedBase = Math.sqrt((x - (-150))**2 + (z - 0)**2);
+            const distToEnemyBase = Math.sqrt((x - 150)**2 + (z - 0)**2);
 
-            let height = (Math.sin(x * 0.02) * Math.cos(z * 0.02)) * 5;
-            height += (Math.sin(x * 0.05) * Math.sin(z * 0.05)) * 2;
+            // Generate realistic rolling hills and mountains
+            let height = (Math.sin(x * 0.01) * Math.cos(z * 0.01)) * 15;
+            height += (Math.sin(x * 0.03) * Math.sin(z * 0.03)) * 5;
+            
+            // Add jagged mountain peaks at edges
+            if (Math.abs(x) > 250 || Math.abs(z) > 250) {
+                height += (Math.random() * 5);
+            }
 
-            if (distToPlayerBase < 80) {
-                // Flatten player base area completely
-                const factor = Math.smoothstep(distToPlayerBase, 60, 80);
+            // LEVEL THE BASES
+            if (distToAlliedBase < 100) {
+                const factor = Math.max(0, Math.min(1, (distToAlliedBase - 60) / 40));
                 height *= factor;
-            } else if (distToEnemyBase < 80) {
-                // Flatten enemy base area completely
-                const factor = Math.smoothstep(distToEnemyBase, 60, 80);
+            } else if (distToEnemyBase < 100) {
+                const factor = Math.max(0, Math.min(1, (distToEnemyBase - 60) / 40));
                 height *= factor;
             }
 
@@ -46,10 +49,9 @@ export class Terrain {
         geometry.computeVertexNormals();
 
         const material = new THREE.MeshStandardMaterial({ 
-            color: 0x2d3b23, // Grass green
-            roughness: 0.9,
-            metalness: 0.1,
-            flatShading: false
+            color: 0x222818, // Dark Forest Green
+            roughness: 1.0,
+            metalness: 0.0,
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
@@ -73,16 +75,8 @@ export class Terrain {
         });
         const hfBody = new CANNON.Body({ mass: 0 });
         hfBody.addShape(hfShape);
-        
-        // Align heightfield with visual plane
         hfBody.position.set(-this.size / 2, 0, this.size / 2);
         hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         this.world.addBody(hfBody);
     }
 }
-
-// Simple smoothstep helper if not available
-Math.smoothstep = function (x, edge0, edge1) {
-    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-    return t * t * (3 - 2 * t);
-};
