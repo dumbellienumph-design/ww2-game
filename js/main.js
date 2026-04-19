@@ -9,6 +9,7 @@ import { Terrain } from './terrain.js';
 import { Vegetation } from './vegetation.js';
 import { Base } from './base.js';
 import { ParticleSystem } from './particles.js';
+import { AudioManager } from './audio.js';
 
 class GameUI {
     static addKill(killer, victim, isPlayerKiller = false) {
@@ -82,7 +83,12 @@ class Game {
         this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas });
         this.minimapRenderer.setSize(220, 220);
 
+        this.fullMapCanvas = document.querySelector('#full-map-canvas');
+        this.fullMapRenderer = new THREE.WebGLRenderer({ canvas: this.fullMapCanvas });
+        this.fullMapRenderer.setSize(800, 800); 
+
         this.scene = new THREE.Scene();
+        // --- NEW: CINEMATIC SKY ---
         this.scene.background = new THREE.Color(0x33383d);
         this.scene.fog = new THREE.FogExp2(0x33383d, 0.003);
         
@@ -102,6 +108,7 @@ class Game {
         this.initWorld();
         this.initUI();
         this.initCompass();
+        this.initFullMap();
         
         window.addEventListener('resize', () => this.onWindowResize());
         this.clock = new THREE.Clock();
@@ -152,6 +159,14 @@ class Game {
         tape.innerHTML = html;
     }
 
+    initFullMap() {
+        this.fullMapSize = 400; 
+        this.fullMapCamera = new THREE.OrthographicCamera(-this.fullMapSize, this.fullMapSize, this.fullMapSize, -this.fullMapSize, 1, 1000);
+        this.fullMapCamera.position.set(0, 500, 0);
+        this.fullMapCamera.lookAt(0, 0, 0);
+        this.fullMapCamera.up.set(0, 0, -1);
+    }
+
     initUI() {
         document.addEventListener('mousedown', () => {
             if (!this.isGameOver && !document.pointerLockElement && !document.getElementById('start-overlay')) {
@@ -178,11 +193,6 @@ class Game {
         GameUI.notify(`CLASS: ${className}`, "#ff0");
     }
 
-    setSquadOrder(order) {
-        GameUI.notify(`SQUAD ORDER: ${order}`, "#ff0");
-        this.allies.forEach(ally => { if (typeof ally.setOrder === 'function') ally.setOrder(order, this.player.body.position); });
-    }
-
     initWorld() {
         this.terrain = new Terrain(this.scene, this.world);
         this.initLights();
@@ -190,6 +200,10 @@ class Game {
         this.vegetation = new Vegetation(this.scene, this.world, this.terrain);
         this.particles = new ParticleSystem(this.scene);
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
+        
+        // --- FIX: CAMERA LAYERS (Hide debug icons from player view) ---
+        this.player.camera.layers.disable(1); 
+
         this.player.body.position.set(-150, 5, 0); 
         this.player.yaw = -Math.PI/2; 
 
@@ -207,13 +221,18 @@ class Game {
     }
 
     initLights() {
-        this.ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        // --- NEW: PROFESSIONAL LIGHTING ---
+        this.ambientLight = new THREE.AmbientLight(0x404040, 0.4);
         this.scene.add(this.ambientLight);
+
+        this.hemiLight = new THREE.HemisphereLight(0x7c8485, 0x222818, 0.6);
+        this.scene.add(this.hemiLight);
+
         this.sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
         this.sunLight.position.set(100, 200, 100);
         this.sunLight.castShadow = true;
-        this.sunLight.shadow.camera.left = -300; this.sunLight.shadow.camera.right = 300;
-        this.sunLight.shadow.camera.top = 300; this.sunLight.shadow.camera.bottom = -300;
+        this.sunLight.shadow.camera.left = -400; this.sunLight.shadow.camera.right = 400;
+        this.sunLight.shadow.camera.top = 400; this.sunLight.shadow.camera.bottom = -400;
         this.sunLight.shadow.mapSize.set(2048, 2048);
         this.scene.add(this.sunLight);
     }
@@ -230,6 +249,7 @@ class Game {
         for(let i=0; i<count; i++) {
             const x = 150 + (Math.random()-0.5)*150; const z = 0 + (Math.random()-0.5)*150;
             const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, null, 'infantry');
+            // Marker Icon (Layer 1 - only for minimap)
             const icon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
             enemy.minimapIcon = icon; 
@@ -255,6 +275,8 @@ class Game {
         this.minimapCamera.position.set(0, 200, 0);
         this.minimapCamera.lookAt(0, 0, 0);
         this.minimapCamera.up.set(0, 0, -1);
+        this.minimapCamera.layers.enable(1); // Enable icon layer for minimap
+
         this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(5, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
         this.playerIcon.rotation.x = -Math.PI / 2; this.playerIcon.layers.set(1); this.scene.add(this.playerIcon);
     }
@@ -262,6 +284,15 @@ class Game {
     onWindowResize() {
         if (this.player) { this.player.camera.aspect = window.innerWidth / window.innerHeight; this.player.camera.updateProjectionMatrix(); }
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Helper for ground clamping
+    getTerrainHeight(x, z) {
+        if (!this.terrain || !this.terrain.mesh) return 0;
+        const raycaster = new THREE.Raycaster();
+        raycaster.set(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0));
+        const intersects = raycaster.intersectObject(this.terrain.mesh);
+        return intersects.length > 0 ? intersects[0].point.y : 0;
     }
 
     animate() {
@@ -290,11 +321,15 @@ class Game {
         this.player.update(delta, this.terrain);
 
         const playerPos = this.player.body.position;
+        // Clamp allies and enemies to ground in their update methods
         this.allies.forEach(ally => ally.update(delta, playerPos, this.enemies, [], this.isPlayerActive));
         
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i]; enemy.update(delta, playerPos, this.player);
-            if (enemy.minimapIcon) enemy.minimapIcon.visible = playerPos.distanceTo(enemy.body.position) < 120;
+            if (enemy.minimapIcon) {
+                enemy.minimapIcon.position.set(enemy.body.position.x, 100, enemy.body.position.z);
+                enemy.minimapIcon.visible = playerPos.distanceTo(enemy.body.position) < 150;
+            }
             if (enemy.isDead && !enemy.wasCounted) { if (enemy.onKilledByPlayer) enemy.onKilledByPlayer(); enemy.wasCounted = true; }
         }
 
@@ -310,9 +345,14 @@ class Game {
         const ammoText = document.getElementById('ammo');
         if(!hpBar || !ammoText) return;
         hpBar.style.width = `${Math.max(0, this.player.health)}%`;
+        
         const hq = this.enemyBase.hqBody;
         const w = this.player.weapons[this.player.currentWeaponIndex];
-        ammoText.innerText = `ENEMY HQ HP: ${Math.max(0, Math.ceil(hq.health))} | AMMO: ${w.ammo}/${w.reserve}`;
+        let ammoStatus = `AMMO: ${w.ammo}/${w.reserve}`;
+        if (w.ammo === 0 && w.reserve > 0) ammoStatus = "PRESS 'R' TO RELOAD";
+        else if (w.ammo === 0 && w.reserve === 0) ammoStatus = "OUT OF AMMO!";
+
+        ammoText.innerText = `HQ HP: ${Math.max(0, Math.ceil(hq.health))} | ${ammoStatus}`;
     }
 
     endGame(victory) {

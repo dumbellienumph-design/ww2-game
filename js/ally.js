@@ -1,37 +1,29 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { VFX } from './vfx.js';
 
 export class Ally {
     constructor(scene, world, position, audio) {
         this.scene = scene;
         this.world = world;
-        this.audio = audio;
-        
         this.health = 100;
-        this.speed = 4.5;
+        this.speed = 6;
         this.isDead = false;
-        this.state = 'waiting'; 
+        this.state = 'follow'; 
         
-        this.fireTimer = Math.random() * 2;
-        this.fireRate = 1.5; 
-        this.detectionDist = 80;
+        this.fireTimer = 0;
+        this.fireRate = 1.5;
 
         this.group = new THREE.Group();
         this.scene.add(this.group);
-
         this.initPhysics(position);
         this.initVisuals();
     }
 
     initPhysics(position) {
-        const shape = new CANNON.Box(new CANNON.Vec3(0.4, 0.9, 0.4));
         this.body = new CANNON.Body({
-            mass: 80,
-            shape: shape,
+            mass: 80, shape: new CANNON.Box(new CANNON.Vec3(0.4, 0.9, 0.4)),
             position: new CANNON.Vec3(position.x, position.y, position.z),
-            fixedRotation: true,
-            linearDamping: 0.5
+            fixedRotation: true, linearDamping: 0.5
         });
         this.world.addBody(this.body);
         this.body.mesh = this.group;
@@ -39,136 +31,105 @@ export class Ally {
     }
 
     initVisuals() {
-        const oliveDrab = new THREE.MeshStandardMaterial({ color: 0x3b3d2e });
-        const tan = new THREE.MeshStandardMaterial({ color: 0x8b7355 });
+        const olive = new THREE.MeshStandardMaterial({ color: 0x3b4d2b });
+        const faceMat = new THREE.MeshStandardMaterial({ color: 0xdbac98 });
+        const darkGrey = new THREE.MeshStandardMaterial({ color: 0x111111 });
 
-        this.visualGroup = new THREE.Group();
-        this.group.add(this.visualGroup);
-
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.3), oliveDrab);
+        // Torso
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.3), olive);
         torso.position.y = 0.4;
-        torso.castShadow = true;
-        torso.receiveShadow = true;
-        this.visualGroup.add(torso);
+        torso.castShadow = true; torso.receiveShadow = true;
+        this.group.add(torso);
 
-        const helmet = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.2), tan);
-        helmet.position.y = 1.1;
+        // Head
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), faceMat);
+        head.position.y = 0.9;
+        this.group.add(head);
+
+        // M1 Helmet
+        const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2), olive);
+        helmet.position.y = 1.0;
+        helmet.scale.set(1.1, 0.8, 1.1);
         helmet.castShadow = true;
-        this.visualGroup.add(helmet);
+        this.group.add(helmet);
 
-        const gun = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.9), new THREE.MeshStandardMaterial({color: 0x111111}));
-        gun.position.set(0.3, 0.4, -0.4);
-        this.visualGroup.add(gun);
+        // Backpack
+        const pack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.15), olive);
+        pack.position.set(0, 0.4, -0.2);
+        this.group.add(pack);
     }
 
-    setOrder(order, playerPos) {
-        if (this.isDead) return;
-        this.order = order;
-        this.state = order.toLowerCase(); // Map to internal states
+    setOrder(order, pos) {
+        this.state = order.toLowerCase();
+        this.orderTarget = pos.clone();
     }
 
     takeDamage(amount) {
         this.health -= amount;
         if (this.health <= 0 && !this.isDead) {
             this.isDead = true;
-            this.group.rotation.x = -Math.PI / 2.2;
-            this.body.mass = 0;
-            this.body.type = CANNON.Body.STATIC;
-            setTimeout(() => this.scene.remove(this.group), 10000);
+            this.group.rotation.x = Math.PI / 2.2;
+            this.body.mass = 0; this.body.type = CANNON.Body.STATIC;
+            setTimeout(() => this.scene.remove(this.group), 15000);
         }
     }
 
     update(delta, playerPos, enemies, objectives, isPlayerActive) {
-        if (this.isDead) return;
+        if (this.isDead || !isPlayerActive) return;
 
-        if (this.state === 'waiting') {
-            if (isPlayerActive) this.state = 'follow';
-            return;
+        // --- CLAMP TO GROUND ---
+        if (window.game && window.game.getTerrainHeight) {
+            const groundY = window.game.getTerrainHeight(this.body.position.x, this.body.position.z);
+            if (this.body.position.y < groundY + 1.0) {
+                this.body.position.y = groundY + 1.0;
+                this.body.velocity.y = 0;
+            }
         }
 
         const currentPos = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
-        const distToPlayer = currentPos.distanceTo(playerPos);
-
+        const pPos = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+        
+        // Find nearest enemy
         let nearestEnemy = null;
-        let minDist = this.detectionDist;
+        let minDist = 100;
         enemies.forEach(e => {
-            if (e.isDead) return;
-            const d = currentPos.distanceTo(e.group.position);
-            if (d < minDist) { minDist = d; nearestEnemy = e; }
+            if(!e.isDead) {
+                const dist = currentPos.distanceTo(new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z));
+                if(dist < minDist) { minDist = dist; nearestEnemy = e; }
+            }
         });
 
-        const moveDir = new THREE.Vector3();
-        
-        // Handle Orders
-        if (this.state === 'hold') {
-            this.body.velocity.set(0, this.body.velocity.y, 0);
-            if (nearestEnemy && minDist < 50) this.shoot(nearestEnemy);
-            return;
+        if (nearestEnemy) {
+            this.group.lookAt(nearestEnemy.body.position.x, this.group.position.y, nearestEnemy.body.position.z);
+            this.fireTimer += delta;
+            if (this.fireTimer >= this.fireRate) { this.shoot(nearestEnemy.body.position); this.fireTimer = 0; }
+        } else {
+            this.group.lookAt(pPos.x, this.group.position.y, pPos.z);
         }
 
-        if (nearestEnemy && minDist < 40) {
-            this.group.lookAt(nearestEnemy.group.position.x, this.group.position.y, nearestEnemy.group.position.z);
-            this.body.velocity.set(0, this.body.velocity.y, 0);
-            this.fireTimer += delta;
-            if (this.fireTimer >= this.fireRate) {
-                this.shoot(nearestEnemy);
-                this.fireTimer = 0;
-            }
-        } 
-        else if (this.state === 'regroup') {
-            if (distToPlayer > 4) {
-                moveDir.subVectors(playerPos, currentPos).normalize();
-                this.body.velocity.x = moveDir.x * this.speed;
-                this.body.velocity.z = moveDir.z * this.speed;
-                this.group.lookAt(playerPos.x, this.group.position.y, playerPos.z);
-            } else {
-                this.state = 'follow';
-            }
-        }
-        else if (this.state === 'advance') {
-            // Rush toward ABLE objective as a default advance point
-            const target = objectives[0].position;
-            const distToTarget = currentPos.distanceTo(target);
-            if (distToTarget > 5) {
-                moveDir.subVectors(target, currentPos).normalize();
-                this.body.velocity.x = moveDir.x * this.speed;
-                this.body.velocity.z = moveDir.z * this.speed;
-                this.group.lookAt(target.x, this.group.position.y, target.z);
-            }
-        }
-        else if (this.state === 'follow') {
-            if (distToPlayer > 8) {
-                moveDir.subVectors(playerPos, currentPos).normalize();
-                this.body.velocity.x = moveDir.x * this.speed;
-                this.body.velocity.z = moveDir.z * this.speed;
-                this.group.lookAt(playerPos.x, this.group.position.y, playerPos.z);
-            } else {
-                this.body.velocity.set(0, this.body.velocity.y, 0);
-            }
+        // Move logic
+        let target = pPos;
+        if (this.state === 'advance' && objectives.length > 0) target = objectives[0].position;
+        
+        const distToTarget = currentPos.distanceTo(target);
+        if (distToTarget > 10) {
+            const moveDir = new THREE.Vector3().subVectors(target, currentPos).normalize();
+            this.body.velocity.x = moveDir.x * this.speed;
+            this.body.velocity.z = moveDir.z * this.speed;
+        } else {
+            this.body.velocity.set(0, 0, 0);
         }
     }
 
-    shoot(target) {
-        if (this.audio && typeof this.audio.play === 'function') this.audio.play('rifle_fire', { randomPitch: true });
-        
-        const startPos = this.group.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-        const targetPos = target.group.position.clone().add(new THREE.Vector3(0, 1.0, 0));
-        const dir = targetPos.sub(startPos).normalize();
-
-        const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({color: 0x00ff00}));
-        bullet.position.copy(startPos);
-        this.scene.add(bullet);
-        
+    shoot(targetPos) {
+        const startPos = this.group.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+        const dir = new THREE.Vector3().subVectors(targetPos, startPos).normalize();
+        const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({color: 0xffffff}));
+        bullet.position.copy(startPos); this.scene.add(bullet);
         const startTime = Date.now();
         const anim = () => {
             if (Date.now() - startTime > 2000 || this.isDead) { this.scene.remove(bullet); return; }
-            bullet.position.add(dir.clone().multiplyScalar(1.5));
-            
-            if (bullet.position.distanceTo(target.group.position) < 1.5) {
-                target.takeDamage(20);
-                this.scene.remove(bullet);
-                return;
-            }
+            bullet.position.add(dir.clone().multiplyScalar(2.0));
             requestAnimationFrame(anim);
         };
         anim();
