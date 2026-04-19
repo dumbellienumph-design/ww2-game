@@ -17,10 +17,39 @@
 </head>
 <body>
     <div id="suppression-overlay"></div>
+
+    <!-- 1.2 SNIPER SCOPE OVERLAY -->
+    <div id="scope-overlay" class="hidden">
+        <div class="scope-circle">
+            <div class="reticle-v"></div>
+            <div class="reticle-h"></div>
+        </div>
+        <div class="scope-black-l"></div>
+        <div class="scope-black-r"></div>
+    </div>
+
     <div id="full-map-overlay">
         <div id="full-map-title">TACTICAL MAP - SECTOR 7</div>
         <canvas id="full-map-canvas"></canvas>
     </div>
+
+    <div id="scoreboard-overlay">
+        <div class="sb-box">
+            <h1 style="font-size: 3rem; margin-top: 0;">MISSION COMPLETE</h1>
+            <div id="sb-mission-result" style="font-size: 1.5rem; margin-bottom: 2rem; font-weight: bold;">ALLIED VICTORY</div>
+            
+            <div class="sb-stat">ENEMIES NEUTRALIZED <span id="sb-kills">0</span></div>
+            <div class="sb-stat">OBJECTIVES SECURED <span id="sb-caps">0</span></div>
+            <div class="sb-stat">TOTAL MISSION XP <span id="sb-xp">0</span></div>
+            
+            <div class="sb-rank-up">FINAL RANK: <span id="sb-rank">PRIVATE</span></div>
+            
+            <div class="menu-buttons" style="margin-top: 3rem; width: 100%;">
+                <button onclick="location.reload()">REDEPLOY TO FRONT</button>
+            </div>
+        </div>
+    </div>
+
     <div id="compass-container">
         <div id="compass-tape"></div>
         <div id="compass-marker"></div>
@@ -29,6 +58,20 @@
 
     <!-- 2. GAME UI -->
     <div id="ui-layer">
+        <!-- TACTICAL WAYPOINTS -->
+        <div id="wp-hq" class="waypoint-marker">
+            <div class="icon">▼</div>
+            <div class="label">ENEMY HQ</div>
+            <div class="dist">0m</div>
+        </div>
+        <div id="wp-base" class="waypoint-marker">
+            <div class="icon">▼</div>
+            <div class="label">ALLIED BASE</div>
+            <div class="dist">0m</div>
+        </div>
+
+        <div id="killstreak-container">RECON PLANE <span>(4) READY</span></div>
+        <div id="rank-indicator">RANK <span>PRIVATE</span></div>
         <div id="class-indicator">ROLE <span>RIFLEMAN</span></div>
         <div id="command-menu">
             <h3 style="margin-top:0">SQUAD COMMANDS</h3>

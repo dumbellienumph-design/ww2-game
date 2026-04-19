@@ -21,7 +21,6 @@ export class Player {
         this.health = 100;
         this.enabled = true;
         
-        // --- NEW: MEDIC SYSTEM STATE ---
         this.isBleeding = false;
         this.bandages = 3;
         this.isHealing = false;
@@ -35,25 +34,25 @@ export class Player {
 
         this.weapons = [
             { 
+                name: 'M1 Garand', type: 'semi', damage: 65, fireRate: 0.3, 
+                capacity: 8, ammo: 8, reserve: 40, reloadTime: 2.5,
+                color: 0x3d2817, length: 1.1, auto: false, adsFOV: 50, adsSpeed: 0.5
+            },
+            { 
+                name: 'Thompson M1A1', type: 'auto', damage: 30, fireRate: 0.08, 
+                capacity: 30, ammo: 30, reserve: 120, reloadTime: 2.8,
+                color: 0x221100, length: 0.8, auto: true, adsFOV: 65, adsSpeed: 0.7
+            },
+            { 
                 name: 'Kar98k', type: 'bolt', damage: 150, fireRate: 1.5, 
                 capacity: 5, ammo: 5, reserve: 25, reloadTime: 4.0,
-                color: 0x4d2a15, length: 0.9, auto: false, adsFOV: 30, adsSpeed: 0.3
-            },
-            { 
-                name: 'M1 Garand', type: 'semi', damage: 60, fireRate: 0.35, 
-                capacity: 8, ammo: 8, reserve: 40, reloadTime: 3.0,
-                color: 0x5c4033, length: 0.8, auto: false, adsFOV: 55, adsSpeed: 0.5
-            },
-            { 
-                name: 'MP40', type: 'auto', damage: 25, fireRate: 0.1, 
-                capacity: 32, ammo: 32, reserve: 128, reloadTime: 3.2,
-                color: 0x111111, length: 0.6, auto: true, adsFOV: 65, adsSpeed: 0.7
+                color: 0x2a1a0a, length: 1.2, auto: false, adsFOV: 25, adsSpeed: 0.3
             }
         ];
         this.currentWeaponIndex = 0;
         this.grenades = 3;
         this.grenadeList = [];
-        this.projectiles = []; // For physical ballistics
+        this.projectiles = []; 
 
         this.fireTimer = 0;
         this.reloadTimer = 0;
@@ -66,11 +65,16 @@ export class Player {
         this.bobTimer = 0;
         this.sway = new THREE.Vector3(0,0,0);
 
+        this.currentVelocity = new THREE.Vector3();
+        this.targetVelocity = new THREE.Vector3();
+        this.tiltAngle = 0; 
+
         this.pitch = 0;
         this.yaw = 0;
 
         this.suppression = 0; 
         this.suppressionOverlay = document.getElementById('suppression-overlay');
+        this.scopeOverlay = document.getElementById('scope-overlay');
 
         this.initPhysics();
         this.initControls();
@@ -83,7 +87,7 @@ export class Player {
         this.shape = new CANNON.Sphere(radius);
         this.body = new CANNON.Body({
             mass: 100, shape: this.shape,
-            fixedRotation: true, linearDamping: 0.5,
+            fixedRotation: true, linearDamping: 0.9,
             material: playerMaterial,
             position: new CANNON.Vec3(0, 10, 0)
         });
@@ -109,15 +113,14 @@ export class Player {
         });
 
         document.addEventListener('keydown', (e) => {
-            this.onKey(e.code, true);
             if(e.code === 'Digit1') this.switchWeapon(0);
             if(e.code === 'Digit2') this.switchWeapon(1);
             if(e.code === 'Digit3') this.switchWeapon(2);
             if(e.code === 'KeyR') this.reload();
             if(e.code === 'KeyG') this.throwGrenade();
             if(e.code === 'KeyH') this.startHealing();
-            if(e.code === 'KeyZ') this.moveState.prone = !this.moveState.prone;
-            if(e.code === 'KeyC') this.moveState.crouch = !this.moveState.crouch;
+            
+            this.onKey(e.code, true);
         });
         document.addEventListener('keyup', (e) => {
             this.onKey(e.code, false);
@@ -197,26 +200,73 @@ export class Player {
         if(this.gunGroup) this.camera.remove(this.gunGroup);
         const weapon = this.weapons[this.currentWeaponIndex];
         this.gunGroup = new THREE.Group();
-        const metalMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.8, roughness: 0.2 });
-        const stockMat = new THREE.MeshStandardMaterial({ color: weapon.color, roughness: 0.9 });
-        const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, 0.5), metalMat);
-        this.gunGroup.add(receiver);
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, weapon.length), metalMat);
-        barrel.rotateX(Math.PI / 2); barrel.position.set(0, 0, -weapon.length/2);
-        this.gunGroup.add(barrel);
-        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.4), stockMat);
-        stock.position.set(0, -0.05, 0.3);
-        this.gunGroup.add(stock);
-        const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.08, 0.02), metalMat);
-        frontSight.position.set(0, 0.05, -weapon.length);
-        this.gunGroup.add(frontSight);
-        const rearSight = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.005, 8, 16, Math.PI), metalMat);
-        rearSight.rotation.y = Math.PI/2; rearSight.position.set(0, 0.1, -0.2);
-        this.gunGroup.add(rearSight);
-        this.muzzle = new THREE.Object3D();
-        this.muzzle.position.set(0, 0, -weapon.length);
-        this.gunGroup.add(this.muzzle);
-        this.gunGroup.position.set(0.3, -0.3, -0.5);
+        
+        const woodMat = new THREE.MeshStandardMaterial({ color: weapon.color, roughness: 0.9 });
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.8, roughness: 0.3 });
+        const sightMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+        if (weapon.name === 'M1 Garand') {
+            const stockMain = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, 0.6), woodMat);
+            stockMain.position.z = 0.2;
+            this.gunGroup.add(stockMain);
+            const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.5), woodMat);
+            handguard.position.z = -0.35;
+            this.gunGroup.add(handguard);
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 1.0), metalMat);
+            barrel.rotation.x = Math.PI / 2;
+            barrel.position.z = -0.4;
+            this.gunGroup.add(barrel);
+            const clip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.1), metalMat);
+            clip.position.set(0, 0.08, -0.1);
+            this.gunGroup.add(clip);
+            const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.06, 0.02), sightMat);
+            frontSight.position.set(0, 0.06, -0.9);
+            this.gunGroup.add(frontSight);
+            const rearSight = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.005, 8, 16), sightMat);
+            rearSight.position.set(0, 0.08, 0.1);
+            this.gunGroup.add(rearSight);
+            this.muzzle = new THREE.Object3D();
+            this.muzzle.position.set(0, 0, -0.9);
+            this.gunGroup.add(this.muzzle);
+        } 
+        else if (weapon.name === 'Thompson M1A1') {
+            const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.5), metalMat);
+            this.gunGroup.add(receiver);
+            const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.12), woodMat);
+            grip.position.set(0, -0.15, 0.2);
+            grip.rotation.x = 0.3;
+            this.gunGroup.add(grip);
+            const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.3), woodMat);
+            foregrip.position.set(0, -0.1, -0.3);
+            this.gunGroup.add(foregrip);
+            const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.15), metalMat);
+            mag.position.set(0, -0.2, -0.05);
+            this.gunGroup.add(mag);
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4), metalMat);
+            barrel.rotation.x = Math.PI / 2;
+            barrel.position.z = -0.45;
+            this.gunGroup.add(barrel);
+            const comp = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.1), metalMat);
+            comp.rotation.x = Math.PI / 2;
+            comp.position.z = -0.65;
+            this.gunGroup.add(comp);
+            this.muzzle = new THREE.Object3D();
+            this.muzzle.position.set(0, 0, -0.65);
+            this.gunGroup.add(this.muzzle);
+        }
+        else {
+            // Default Kar98k
+            const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.8), woodMat);
+            this.gunGroup.add(stock);
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.2), metalMat);
+            barrel.rotation.x = Math.PI / 2; barrel.position.z = -0.4;
+            this.gunGroup.add(barrel);
+            this.muzzle = new THREE.Object3D();
+            this.muzzle.position.set(0, 0, -1.0);
+            this.gunGroup.add(this.muzzle);
+        }
+
+        this.gunGroup.position.set(0.35, -0.35, -0.6);
         this.camera.add(this.gunGroup);
         this.scene.add(this.camera);
     }
@@ -228,7 +278,7 @@ export class Player {
     takeDamage(amount) {
         this.health -= amount;
         this.suppress(0.3); 
-        this.isBleeding = true; // Trigger bleeding
+        this.isBleeding = true; 
         if (this.health <= 0) {
             this.health = 100;
             this.body.position.set(-50, 5, 40);
@@ -249,24 +299,25 @@ export class Player {
     }
 
     shoot() {
-        if (this.isReloading) return;
+        if (this.isReloading || this.isHealing) return;
         const weapon = this.weapons[this.currentWeaponIndex];
         if (weapon.ammo <= 0) return;
         weapon.ammo--;
         
-        const recoilAmount = (this.moveState.ads ? 0.02 : 0.05) * (1 + this.suppression);
-        this.gunGroup.position.z += recoilAmount;
-        this.gunGroup.rotation.x += recoilAmount * 0.5;
-        
-        if(this.particles) {
-            const muzzlePos = new THREE.Vector3();
+        const muzzlePos = new THREE.Vector3();
+        if(this.muzzle) {
             this.muzzle.getWorldPosition(muzzlePos);
-            const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-            this.particles.createMuzzleFlash(muzzlePos, dir, false);
-            
-            // --- NEW: PHYSICAL PROJECTILE (TRACER) ---
-            this.createProjectile(muzzlePos, dir, weapon);
+        } else {
+            muzzlePos.copy(this.camera.position);
         }
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        this.particles.createMuzzleFlash(muzzlePos, dir, false);
+
+        const kick = this.moveState.ads ? 0.03 : 0.07;
+        this.gunGroup.position.z += kick;
+        this.pitch += kick * 0.2;
+
+        this.createProjectile(muzzlePos, dir, weapon);
     }
 
     createProjectile(pos, dir, weapon) {
@@ -279,7 +330,7 @@ export class Player {
 
         const projectile = {
             mesh: tracer,
-            velocity: dir.clone().multiplyScalar(180), // Bullet speed
+            velocity: dir.clone().multiplyScalar(180), 
             gravity: new THREE.Vector3(0, -9.8, 0),
             damage: weapon.damage,
             life: 2.0
@@ -306,63 +357,49 @@ export class Player {
 
         const weapon = this.weapons[this.currentWeaponIndex];
 
-        // --- UPDATE BALLISTICS ---
+        // BALLISTICS
         for (let i = this.projectiles.length - 1; i >= 0; i--) {
             const p = this.projectiles[i];
             p.life -= delta;
-            
-            // Apply gravity and travel
             p.velocity.add(p.gravity.clone().multiplyScalar(delta));
             const nextPos = p.mesh.position.clone().add(p.velocity.clone().multiplyScalar(delta));
-            
-            // Raycast for precision collision between frames
             const ray = new THREE.Raycaster(p.mesh.position, p.velocity.clone().normalize(), 0, p.velocity.length() * delta + 0.1);
             const intersects = ray.intersectObjects(this.scene.children, true);
             
             if (intersects.length > 0 && intersects[0].object !== p.mesh) {
                 const hit = intersects[0];
                 const hitBody = this.findPhysicsBody(hit.object);
-                
-                // Impact effects
                 if (hit.object.name !== 'minimap') {
                     const isDirt = hit.object.name === 'terrain' || hit.object.geometry?.type === 'PlaneGeometry';
                     VFX.createImpactVFX(this.scene, hit.point, hit.face.normal, isDirt ? 'dirt' : 'concrete');
                     if (!hitBody || !hitBody.onHit) VFX.createBulletHole(this.scene, hit);
                 }
-
                 if (hitBody && hitBody.onHit) {
                     hitBody.onHit(p.damage);
                     this.showHitmarker((hitBody.health !== undefined && hitBody.health <= 0) || hitBody.isDead);
                 }
-                
                 this.scene.remove(p.mesh);
                 this.projectiles.splice(i, 1);
                 continue;
             }
-
             p.mesh.position.copy(nextPos);
             p.mesh.lookAt(nextPos.clone().add(p.velocity));
-
-            if (p.life <= 0) {
-                this.scene.remove(p.mesh);
-                this.projectiles.splice(i, 1);
-            }
+            if (p.life <= 0) { this.scene.remove(p.mesh); this.projectiles.splice(i, 1); }
         }
 
-        // --- UPDATE MEDIC SYSTEM ---
+        // MEDIC
         if (this.isHealing) {
             this.healTimer += delta;
-            if (this.healTimer >= 2.0) { // 2 seconds to bandage
+            if (this.healTimer >= 2.0) {
                 this.health = Math.min(100, this.health + 40);
                 this.bandages--;
                 this.isBleeding = false;
                 this.isHealing = false;
             }
         }
-        if (this.isBleeding && !this.isHealing) {
-            this.health -= delta * 1.5; // Drain health while bleeding
-        }
+        if (this.isBleeding && !this.isHealing) this.health -= delta * 1.5;
 
+        // RELOAD
         if (this.isReloading) {
             this.reloadTimer -= delta;
             if (this.reloadTimer <= 0) {
@@ -376,12 +413,8 @@ export class Player {
 
         this.suppression = Math.max(0, this.suppression - delta * 0.5);
         if (this.suppressionOverlay) {
-            if (this.suppression > 0.1) {
-                this.suppressionOverlay.classList.add('active');
-                this.suppressionOverlay.style.boxShadow = `inset 0 0 ${this.suppression * 300}px rgba(0, 0, 0, ${0.5 + this.suppression * 0.5}), inset 0 0 50px rgba(255, 0, 0, ${this.suppression * 0.2})`;
-            } else {
-                this.suppressionOverlay.classList.remove('active');
-            }
+            if (this.suppression > 0.1) this.suppressionOverlay.classList.add('active');
+            else this.suppressionOverlay.classList.remove('active');
         }
 
         this.grenadeList.forEach((g, i) => {
@@ -389,31 +422,12 @@ export class Player {
             if (g.isExploded) this.grenadeList.splice(i, 1);
         });
 
+        // STANCE
         let targetHeight = 0.7; 
         let speedMult = 1.0;
-        if (this.moveState.prone) {
-            targetHeight = -0.2;
-            speedMult = 0.2;
-            this.moveState.crouch = false;
-        } else if (this.moveState.crouch) {
-            targetHeight = 0.2;
-            speedMult = 0.5;
-        }
+        if (this.moveState.prone) { targetHeight = -0.2; speedMult = 0.2; this.moveState.crouch = false; }
+        else if (this.moveState.crouch) { targetHeight = 0.2; speedMult = 0.5; }
         this.currentHeight = THREE.MathUtils.lerp(this.currentHeight, targetHeight, 0.1);
-
-        let targetLeanAngle = 0;
-        let targetLeanOffset = 0;
-        if (this.moveState.leanLeft) { targetLeanAngle = 0.2; targetLeanOffset = -0.4; }
-        else if (this.moveState.leanRight) { targetLeanAngle = -0.2; targetLeanOffset = 0.4; }
-        this.leanAngle = THREE.MathUtils.lerp(this.leanAngle, targetLeanAngle, 0.1);
-        this.leanOffset = THREE.MathUtils.lerp(this.leanOffset, targetLeanOffset, 0.1);
-
-        const targetAdsFactor = this.moveState.ads ? 1.0 : 0;
-        this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
-
-        const shakeX = (Math.random() - 0.5) * this.suppression * 0.05;
-        const shakeY = (Math.random() - 0.5) * this.suppression * 0.05;
-        this.camera.rotation.set(this.pitch + shakeY, this.yaw + shakeX, this.leanAngle);
 
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
         forward.y = 0; forward.normalize();
@@ -426,59 +440,82 @@ export class Player {
         if (this.moveState.left) moveDir.sub(right);
         if (this.moveState.right) moveDir.add(right);
 
-        let currentSpeed = 0;
         if (moveDir.length() > 0) {
             moveDir.normalize();
-            const currentY = this.body.velocity.y;
-            currentSpeed = this.walkSpeed * speedMult * THREE.MathUtils.lerp(1.0, weapon.adsSpeed, this.adsFactor);
-            if (this.isHealing) currentSpeed *= 0.3; // Slow while bandaging
-            this.body.velocity.x = moveDir.x * currentSpeed;
-            this.body.velocity.z = moveDir.z * currentSpeed;
-            this.body.velocity.y = currentY;
+            const currentMaxSpeed = this.walkSpeed * speedMult * (this.moveState.ads ? 0.5 : 1.0);
+            this.targetVelocity.copy(moveDir.multiplyScalar(currentMaxSpeed));
         } else {
-            this.body.velocity.x *= 0.5;
-            this.body.velocity.z *= 0.5;
+            this.targetVelocity.set(0, 0, 0);
         }
+
+        this.currentVelocity.lerp(this.targetVelocity, delta * 10);
+        this.body.velocity.x = this.currentVelocity.x;
+        this.body.velocity.z = this.currentVelocity.z;
 
         if (this.moveState.jump && this.canJump && !this.moveState.ads && !this.moveState.prone) {
             this.body.velocity.y = 10;
             this.canJump = false;
         }
 
-        this.sway.lerp(new THREE.Vector3(0,0,0), 0.1); 
-        if (currentSpeed > 0 && !this.moveState.jump) {
-            this.bobTimer += delta * currentSpeed * 1.2;
-        } else {
-            this.bobTimer += delta * 2.0; 
-        }
+        let targetTilt = 0;
+        if (this.moveState.left) targetTilt = 0.02;
+        if (this.moveState.right) targetTilt = -0.02;
         
-        const bobOffset = Math.sin(this.bobTimer) * (currentSpeed > 0 ? 0.04 : 0.01) * (1 - this.adsFactor * 0.8);
-        const bobSide = Math.cos(this.bobTimer * 0.5) * (currentSpeed > 0 ? 0.02 : 0) * (1 - this.adsFactor * 0.8);
+        let targetLean = 0;
+        let targetLeanOffset = 0;
+        if (this.moveState.leanLeft) { targetLean = 0.2; targetLeanOffset = -0.4; }
+        else if (this.moveState.leanRight) { targetLean = -0.2; targetLeanOffset = 0.4; }
 
-        const suppressionSway = Math.sin(Date.now() * 0.005) * this.suppression * 0.1;
-        const hipPos = new THREE.Vector3(0.3 + this.sway.x + bobSide + suppressionSway, -0.3 + this.sway.y + Math.abs(bobOffset), -0.5);
-        const adsPos = new THREE.Vector3(0 + this.sway.x * 0.1 + suppressionSway * 0.2, -0.12 + this.sway.y * 0.1, -0.3);
+        this.tiltAngle = THREE.MathUtils.lerp(this.tiltAngle, targetTilt, delta * 5);
+        this.leanAngle = THREE.MathUtils.lerp(this.leanAngle, targetLean, 0.1);
+        this.leanOffset = THREE.MathUtils.lerp(this.leanOffset, targetLeanOffset, 0.1);
+
+        const targetAdsFactor = this.moveState.ads ? 1.0 : 0;
+        this.adsFactor = THREE.MathUtils.lerp(this.adsFactor, targetAdsFactor, 0.2);
+
+        this.camera.rotation.set(this.pitch, this.yaw, this.leanAngle + this.tiltAngle);
+
+        // --- NEW: SNIPER SCOPE TOGGLE ---
+        if (this.scopeOverlay) {
+            if (this.adsFactor > 0.8 && weapon.name === 'Kar98k') {
+                this.scopeOverlay.classList.remove('hidden');
+                document.getElementById('crosshair').classList.add('hidden');
+                this.gunGroup.visible = false;
+            } else {
+                this.scopeOverlay.classList.add('hidden');
+                document.getElementById('crosshair').classList.remove('hidden');
+                this.gunGroup.visible = true;
+            }
+        }
+
+        const speed = this.currentVelocity.length();
+        this.sway.lerp(new THREE.Vector3(0,0,0), 0.1); 
+        this.bobTimer += delta * (speed > 1 ? speed * 1.2 : 2.0);
+        const bobOffset = Math.sin(this.bobTimer) * (speed > 1 ? 0.04 : 0.01) * (1 - this.adsFactor * 0.8);
+        const bobSide = Math.cos(this.bobTimer * 0.5) * (speed > 1 ? 0.02 : 0) * (1 - this.adsFactor * 0.8);
+
+        const hipPos = new THREE.Vector3(0.35 + this.sway.x + bobSide, -0.35 + this.sway.y + Math.abs(bobOffset), -0.6);
+        const adsPos = new THREE.Vector3(0 + this.sway.x * 0.1, -0.15 + this.sway.y * 0.1, -0.4);
         
         this.gunGroup.rotation.x = THREE.MathUtils.lerp(this.gunGroup.rotation.x, 0, 0.1);
 
         if (this.isReloading) {
-            this.gunGroup.position.lerp(new THREE.Vector3(0.3, -1.0, -0.5), 0.1);
+            const rProgress = this.reloadTimer / weapon.reloadTime;
+            const reloadDip = Math.sin(rProgress * Math.PI) * 0.5;
+            this.gunGroup.position.set(0.35, -0.35 - reloadDip, -0.6);
+            this.gunGroup.rotation.x = -reloadDip;
         } else if (this.isHealing) {
-            this.gunGroup.position.lerp(new THREE.Vector3(0, -1.5, -0.5), 0.1); // Lower gun while healing
+            this.gunGroup.position.lerp(new THREE.Vector3(0, -1.5, -0.5), 0.1);
         } else {
             this.gunGroup.position.lerpVectors(hipPos, adsPos, this.adsFactor);
         }
 
-        const targetFOV = THREE.MathUtils.lerp(this.baseFOV, weapon.adsFOV, this.adsFactor);
-        if (Math.abs(this.camera.fov - targetFOV) > 0.1) {
-            this.camera.fov = targetFOV;
-            this.camera.updateProjectionMatrix();
-        }
+        this.camera.fov = THREE.MathUtils.lerp(this.baseFOV, weapon.adsFOV, this.adsFactor);
+        this.camera.updateProjectionMatrix();
 
         this.camera.position.x = this.body.position.x;
         this.camera.position.y = this.body.position.y + this.currentHeight + bobOffset;
         this.camera.position.z = this.body.position.z;
-        
         const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
         this.camera.position.add(camRight.multiplyScalar(this.leanOffset));
     }
