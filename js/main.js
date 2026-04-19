@@ -75,22 +75,17 @@ class Game {
             powerPreference: "high-performance"
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
 
         this.minimapCanvas = document.querySelector('#minimap-canvas');
         this.minimapRenderer = new THREE.WebGLRenderer({ canvas: this.minimapCanvas });
         this.minimapRenderer.setSize(220, 220);
 
-        this.fullMapCanvas = document.querySelector('#full-map-canvas');
-        this.fullMapRenderer = new THREE.WebGLRenderer({ canvas: this.fullMapCanvas });
-        this.fullMapRenderer.setSize(800, 800); 
-
         this.scene = new THREE.Scene();
-        // --- NEW: CINEMATIC SKY ---
-        this.scene.background = new THREE.Color(0x33383d);
-        this.scene.fog = new THREE.FogExp2(0x33383d, 0.003);
+        this.scene.background = new THREE.Color(0x2d3238); 
+        this.scene.fog = new THREE.FogExp2(0x2d3238, 0.003);
         
         this.world = new CANNON.World();
         this.world.gravity.set(0, -25, 0);
@@ -102,25 +97,21 @@ class Game {
         this.playerXP = 0;
         this.playerRank = 'PRIVATE';
         this.sessionKills = 0;
-        this.killstreakXP = 0;
-        this.reinforcementQueue = [];
-
+        
         this.initWorld();
         this.initUI();
         this.initCompass();
-        this.initFullMap();
         
         window.addEventListener('resize', () => this.onWindowResize());
         this.clock = new THREE.Clock();
-        
         this.createStartOverlay();
     }
 
     createStartOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'start-overlay';
-        overlay.style = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:2000; display:flex; flex-direction:column; justify-content:center; align-items:center; color:#ff0; font-family:monospace; cursor:pointer;';
-        overlay.innerHTML = '<h1 style="font-size:3rem; letter-spacing:10px; margin:0;">WW2 FRONTLINES</h1><p style="font-size:1.2rem; margin-top:20px; opacity:0.7;">CLICK ANYWHERE TO BEGIN MISSION</p>';
+        overlay.style = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:2000; display:flex; flex-direction:column; justify-content:center; align-items:center; color:#ff0; font-family:monospace; cursor:pointer;';
+        overlay.innerHTML = '<h1 style="font-size:3.5rem; letter-spacing:15px; margin:0; text-shadow:0 0 20px #ff0;">WW2 FRONTLINES</h1><p style="font-size:1.2rem; margin-top:30px; opacity:0.6; letter-spacing:5px;">CLICK TO DEPLOY</p>';
         document.body.appendChild(overlay);
         
         const start = () => {
@@ -128,13 +119,13 @@ class Game {
             overlay.remove();
             this.player.requestPointerLock();
             this.animate();
-            GameUI.notify("PRIMARY OBJECTIVE: DESTROY ENEMY HQ", "#ff0");
+            GameUI.notify("MISSION: DESTROY ENEMY HQ", "#ff0");
         };
         overlay.addEventListener('click', start);
     }
 
     addXP(amount, reason) {
-        this.playerXP += amount; this.killstreakXP += amount;
+        this.playerXP += amount;
         GameUI.notify(`+${amount} XP ${reason}`, "#ff0");
         const oldRank = this.playerRank;
         if (this.playerXP >= 5000) this.playerRank = 'CAPTAIN';
@@ -159,27 +150,11 @@ class Game {
         tape.innerHTML = html;
     }
 
-    initFullMap() {
-        this.fullMapSize = 400; 
-        this.fullMapCamera = new THREE.OrthographicCamera(-this.fullMapSize, this.fullMapSize, this.fullMapSize, -this.fullMapSize, 1, 1000);
-        this.fullMapCamera.position.set(0, 500, 0);
-        this.fullMapCamera.lookAt(0, 0, 0);
-        this.fullMapCamera.up.set(0, 0, -1);
-    }
-
     initUI() {
         document.addEventListener('mousedown', () => {
             if (!this.isGameOver && !document.pointerLockElement && !document.getElementById('start-overlay')) {
                 this.player.requestPointerLock();
             }
-        });
-        const btnResume = document.getElementById('btn-resume');
-        if (btnResume) { btnResume.addEventListener('click', () => { document.getElementById('esc-menu').classList.add('hidden'); this.player.requestPointerLock(); }); }
-        
-        document.addEventListener('keydown', (e) => {
-            if (e.code === 'Digit7') this.switchClass('ASSAULT');
-            if (e.code === 'Digit8') this.switchClass('SNIPER');
-            if (e.code === 'Digit9') this.switchClass('RIFLEMAN');
         });
     }
 
@@ -201,10 +176,10 @@ class Game {
         this.particles = new ParticleSystem(this.scene);
         this.player = new Player(this.scene, this.world, this.renderer.domElement, null, this.particles);
         
-        // --- FIX: CAMERA LAYERS (Hide debug icons from player view) ---
+        this.player.camera.layers.enable(0);
         this.player.camera.layers.disable(1); 
 
-        this.player.body.position.set(-150, 5, 0); 
+        this.player.body.position.set(-150, 15, 0); 
         this.player.yaw = -Math.PI/2; 
 
         this.alliedBase = new Base(this.scene, this.world, { x: -150, y: 0, z: 0 }, null, this.particles, false);
@@ -212,7 +187,7 @@ class Game {
         
         this.objectives = [
             { name: "ENEMY HQ", position: new THREE.Vector3(150, 0, 0), id: 'hq' },
-            { name: "ALLIED BASE", position: new THREE.Vector3(-150, 0, 0), id: 'base' }
+            { name: "BASE", position: new THREE.Vector3(-150, 0, 0), id: 'base' }
         ];
         
         this.spawnEnemies(20); 
@@ -221,25 +196,34 @@ class Game {
     }
 
     initLights() {
-        // --- NEW: PROFESSIONAL LIGHTING ---
-        this.ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
         this.scene.add(this.ambientLight);
 
         this.hemiLight = new THREE.HemisphereLight(0x7c8485, 0x222818, 0.6);
         this.scene.add(this.hemiLight);
 
-        this.sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        this.sunLight.position.set(100, 200, 100);
-        this.sunLight.castShadow = true;
-        this.sunLight.shadow.camera.left = -400; this.sunLight.shadow.camera.right = 400;
-        this.sunLight.shadow.camera.top = 400; this.sunLight.shadow.camera.bottom = -400;
+        this.sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        this.sunLight.position.set(200, 400, 100);
+        
+        this.sunLight.shadow.camera.left = -400;
+        this.sunLight.shadow.camera.right = 400;
+        this.sunLight.shadow.camera.top = 400;
+        this.sunLight.shadow.camera.bottom = -400;
+        this.sunLight.shadow.camera.near = 1;
+        this.sunLight.shadow.camera.far = 1200;
         this.sunLight.shadow.mapSize.set(2048, 2048);
+        
+        // --- FIX: CRITICAL STABILITY BIAS ---
+        this.sunLight.shadow.bias = -0.003;
+        this.sunLight.shadow.radius = 2;
+        this.sunLight.castShadow = true;
+        
         this.scene.add(this.sunLight);
     }
 
     initPhysicsMaterial() {
         const defaultMat = new CANNON.Material('default');
-        const contactMat = new CANNON.ContactMaterial(defaultMat, defaultMat, { friction: 0.1, restitution: 0.3 });
+        const contactMat = new CANNON.ContactMaterial(defaultMat, defaultMat, { friction: 0.1, restitution: 0.1 });
         this.world.addContactMaterial(contactMat);
         this.world.defaultContactMaterial = contactMat;
     }
@@ -247,10 +231,9 @@ class Game {
     spawnEnemies(count) {
         this.enemies = [];
         for(let i=0; i<count; i++) {
-            const x = 150 + (Math.random()-0.5)*150; const z = 0 + (Math.random()-0.5)*150;
+            const x = 120 + (Math.random()-0.5)*150; const z = (Math.random()-0.5)*150;
             const enemy = new Enemy(this.scene, this.world, { x, y: 30, z }, null, 'infantry');
-            // Marker Icon (Layer 1 - only for minimap)
-            const icon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+            const icon = new THREE.Mesh(new THREE.CircleGeometry(4, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
             enemy.minimapIcon = icon; 
             enemy.onKilledByPlayer = () => { GameUI.addKill("YOU", "ENEMY", true); this.addXP(100, "ENEMY NEUTRALIZED"); this.sessionKills++; };
@@ -261,23 +244,24 @@ class Game {
     spawnAllies(count) {
         this.allies = [];
         for(let i=0; i<count; i++) {
-            const x = -150 + (Math.random()-0.5)*50; const z = 0 + (Math.random()-0.5)*50;
+            const x = -150 + (Math.random()-0.5)*60; const z = (Math.random()-0.5)*60;
             const ally = new Ally(this.scene, this.world, { x, y: 5, z }, null);
-            const icon = new THREE.Mesh(new THREE.CircleGeometry(2, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+            const icon = new THREE.Mesh(new THREE.CircleGeometry(3, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
             icon.rotation.x = -Math.PI / 2; icon.layers.set(1); this.scene.add(icon);
             ally.minimapIcon = icon; this.allies.push(ally);
         }
     }
 
     initMinimap() {
-        this.minimapSize = 150;
+        this.minimapSize = 250;
         this.minimapCamera = new THREE.OrthographicCamera(-this.minimapSize, this.minimapSize, this.minimapSize, -this.minimapSize, 1, 1000);
-        this.minimapCamera.position.set(0, 200, 0);
+        this.minimapCamera.position.set(0, 250, 0);
         this.minimapCamera.lookAt(0, 0, 0);
         this.minimapCamera.up.set(0, 0, -1);
-        this.minimapCamera.layers.enable(1); // Enable icon layer for minimap
+        this.minimapCamera.layers.enable(0);
+        this.minimapCamera.layers.enable(1); 
 
-        this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(5, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+        this.playerIcon = new THREE.Mesh(new THREE.CircleGeometry(8, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
         this.playerIcon.rotation.x = -Math.PI / 2; this.playerIcon.layers.set(1); this.scene.add(this.playerIcon);
     }
 
@@ -286,11 +270,10 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    // Helper for ground clamping
     getTerrainHeight(x, z) {
         if (!this.terrain || !this.terrain.mesh) return 0;
         const raycaster = new THREE.Raycaster();
-        raycaster.set(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0));
+        raycaster.set(new THREE.Vector3(x, 250, z), new THREE.Vector3(0, -1, 0));
         const intersects = raycaster.intersectObject(this.terrain.mesh);
         return intersects.length > 0 ? intersects[0].point.y : 0;
     }
@@ -298,21 +281,30 @@ class Game {
     animate() {
         if (this.isGameOver) return;
         requestAnimationFrame(() => this.animate());
-        const delta = Math.min(this.clock.getDelta(), 0.1);
+        const delta = Math.min(this.clock.getDelta(), 0.05);
+
+        const playerPos = this.player.body.position;
+
+        // --- NEW: SNAPPING SHADOW CAMERA ---
+        // Snaps the sun position to a 2m grid to prevent jitter
+        const snap = 2;
+        const snappedX = Math.round(playerPos.x / snap) * snap;
+        const snappedZ = Math.round(playerPos.z / snap) * snap;
+        this.sunLight.position.set(snappedX + 200, 400, snappedZ + 100);
+        this.sunLight.target.position.set(snappedX, 0, snappedZ);
+        this.sunLight.target.updateMatrixWorld();
 
         if (this.player) {
-            if (!this.isPlayerActive) { const vel = this.player.body.velocity; if (Math.abs(vel.x) > 0.1 || Math.abs(vel.z) > 0.1) this.isPlayerActive = true; }
+            if (!this.isPlayerActive) { if (Math.abs(this.player.body.velocity.x) > 0.1) this.isPlayerActive = true; }
             GameUI.updateCompass(this.player.yaw);
             const wpTargets = this.objectives.map(o => {
                 const p = new THREE.Vector3(o.position.x, 5, o.position.z);
-                return { id: o.id, position: p, dist: this.player.body.position.distanceTo(new CANNON.Vec3(p.x, p.y, p.z)) };
+                return { id: o.id, position: p, dist: playerPos.distanceTo(new CANNON.Vec3(p.x, p.y, p.z)) };
             });
             GameUI.updateWaypoints(this.player.camera, wpTargets);
         }
         
-        this.world.step(1/60, delta, 10);
-        if(this.alliedBase) this.alliedBase.update(delta, this.clock.elapsedTime);
-        if(this.enemyBase) this.enemyBase.update(delta, this.clock.elapsedTime);
+        this.world.step(1/60, delta, 5);
         this.particles.update(delta, this.player.camera);
         if (this.vegetation) this.vegetation.update(delta);
 
@@ -320,22 +312,21 @@ class Game {
         
         this.player.update(delta, this.terrain);
 
-        const playerPos = this.player.body.position;
-        // Clamp allies and enemies to ground in their update methods
         this.allies.forEach(ally => ally.update(delta, playerPos, this.enemies, [], this.isPlayerActive));
         
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i]; enemy.update(delta, playerPos, this.player);
             if (enemy.minimapIcon) {
                 enemy.minimapIcon.position.set(enemy.body.position.x, 100, enemy.body.position.z);
-                enemy.minimapIcon.visible = playerPos.distanceTo(enemy.body.position) < 150;
+                enemy.minimapIcon.visible = playerPos.distanceTo(enemy.body.position) < 250;
             }
             if (enemy.isDead && !enemy.wasCounted) { if (enemy.onKilledByPlayer) enemy.onKilledByPlayer(); enemy.wasCounted = true; }
         }
 
         this.updateUIGameplay();
         this.renderer.render(this.scene, this.player.camera);
-        this.minimapCamera.position.set(playerPos.x, 200, playerPos.z);
+        
+        this.minimapCamera.position.set(playerPos.x, 250, playerPos.z);
         this.playerIcon.position.set(playerPos.x, 101, playerPos.z);
         this.minimapRenderer.render(this.scene, this.minimapCamera);
     }
@@ -345,14 +336,9 @@ class Game {
         const ammoText = document.getElementById('ammo');
         if(!hpBar || !ammoText) return;
         hpBar.style.width = `${Math.max(0, this.player.health)}%`;
-        
         const hq = this.enemyBase.hqBody;
         const w = this.player.weapons[this.player.currentWeaponIndex];
-        let ammoStatus = `AMMO: ${w.ammo}/${w.reserve}`;
-        if (w.ammo === 0 && w.reserve > 0) ammoStatus = "PRESS 'R' TO RELOAD";
-        else if (w.ammo === 0 && w.reserve === 0) ammoStatus = "OUT OF AMMO!";
-
-        ammoText.innerText = `HQ HP: ${Math.max(0, Math.ceil(hq.health))} | ${ammoStatus}`;
+        ammoText.innerText = `HQ HP: ${Math.max(0, Math.ceil(hq.health))} | AMMO: ${w.ammo}/${w.reserve}`;
     }
 
     endGame(victory) {
@@ -363,7 +349,6 @@ class Game {
         document.getElementById('sb-mission-result').style.color = victory ? "#0f0" : "#f00";
         document.getElementById('sb-kills').innerText = this.sessionKills;
         document.getElementById('sb-xp').innerText = Math.floor(this.playerXP);
-        document.getElementById('sb-rank').innerText = this.playerRank;
         document.exitPointerLock();
     }
 }

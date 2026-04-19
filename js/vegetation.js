@@ -7,9 +7,9 @@ export class Vegetation {
         this.world = world;
         this.terrain = terrain;
         
-        this.treeCount = 100;
-        this.bushCount = 150;
-        this.grassCount = 5000;
+        this.treeCount = 120;
+        this.bushCount = 180;
+        this.grassCount = 6000;
 
         this.objects = []; 
         this.grass = null;
@@ -19,25 +19,26 @@ export class Vegetation {
     }
 
     isNearBase(x, z) {
-        const dx = x - (-50);
-        const dz = z - (-50);
-        return (dx * dx + dz * dz) < 75 * 75;
+        const distAllied = Math.sqrt((x - (-150))**2 + (z - 0)**2);
+        const distEnemy = Math.sqrt((x - 150)**2 + (z - 0)**2);
+        return distAllied < 130 || distEnemy < 130;
     }
 
     init() {
-        const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2817 });
-        const leafMat = new THREE.MeshStandardMaterial({ color: 0x1a3314 });
-        const bushMat = new THREE.MeshStandardMaterial({ color: 0x2d4c0b });
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.9 });
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x142b0a, roughness: 1.0 });
+        const bushMat = new THREE.MeshStandardMaterial({ color: 0x1e330d, roughness: 1.0 });
 
         for (let i = 0; i < this.treeCount + this.bushCount; i++) {
             const isTree = i < this.treeCount;
-            let x = (Math.random() - 0.5) * 450;
-            let z = (Math.random() - 0.5) * 450;
+            let x = (Math.random() - 0.5) * 800;
+            let z = (Math.random() - 0.5) * 800;
             
             if (this.isNearBase(x, z)) continue;
 
             const y = this.getYAt(x, z);
             if (y === null) continue;
+            
             if (isTree) this.createTree(x, y, z, woodMat, leafMat);
             else this.createBush(x, y, z, bushMat);
         }
@@ -46,18 +47,19 @@ export class Vegetation {
     }
 
     getYAt(x, z) {
+        if (!this.terrain || !this.terrain.mesh) return 0;
         const raycaster = new THREE.Raycaster();
-        raycaster.set(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0));
+        raycaster.set(new THREE.Vector3(x, 300, z), new THREE.Vector3(0, -1, 0));
         const intersects = raycaster.intersectObject(this.terrain.mesh);
-        return intersects.length > 0 ? intersects[0].point.y : null;
+        return intersects.length > 0 ? intersects[0].point.y : 0;
     }
 
     createTree(x, y, z, woodMat, leafMat) {
         const group = new THREE.Group();
         group.position.set(x, y, z);
-        const trunkHeight = 4 + Math.random() * 3;
-        const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, trunkHeight, 6);
-        const trunk = new THREE.Mesh(trunkGeo, woodMat);
+        
+        const trunkHeight = 5 + Math.random() * 4;
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, trunkHeight, 6), woodMat);
         trunk.position.y = trunkHeight / 2;
         trunk.castShadow = true; trunk.receiveShadow = true;
         group.add(trunk);
@@ -66,52 +68,40 @@ export class Vegetation {
         leafGroup.position.y = trunkHeight * 0.7;
         group.add(leafGroup);
 
-        const layers = 3 + Math.floor(Math.random() * 2);
+        const layers = 4;
         for (let j = 0; j < layers; j++) {
-            const coneGeo = new THREE.ConeGeometry(2.5 - j * 0.4, 3, 8);
-            const leaves = new THREE.Mesh(coneGeo, leafMat);
-            leaves.position.y = j * 1.5;
+            const leaves = new THREE.Mesh(new THREE.ConeGeometry(3 - j*0.6, 4, 8), leafMat);
+            leaves.position.y = j * 1.8;
             leaves.castShadow = true; leaves.receiveShadow = true;
             leafGroup.add(leaves);
         }
         
-        const trunkShape = new CANNON.Cylinder(0.5, 0.5, trunkHeight, 8);
-        const trunkBody = new CANNON.Body({ mass: 0, shape: trunkShape, position: new CANNON.Vec3(x, y + trunkHeight / 2, z)});
-        
-        this.objects.push({ mesh: group, leafGroup: leafGroup, body: trunkBody, active: false, type: 'tree' });
+        // Physics body is STATIC (mass 0)
+        const body = new CANNON.Body({ mass: 0, shape: new CANNON.Cylinder(0.5, 0.5, trunkHeight, 8), position: new CANNON.Vec3(x, y + trunkHeight/2, z)});
+        this.world.addBody(body);
+
+        this.objects.push({ mesh: group, leafGroup: leafGroup, active: false, type: 'tree' });
     }
 
     createBush(x, y, z, bushMat) {
-        const group = new THREE.Group();
-        group.position.set(x, y, z);
-        const size = 0.6 + Math.random() * 1.2;
-        for (let j = 0; j < 4; j++) {
-            const sphereGeo = new THREE.IcosahedronGeometry(size, 0);
-            const sphere = new THREE.Mesh(sphereGeo, bushMat);
-            sphere.position.set((Math.random() - 0.5) * size, Math.random() * size * 0.5, (Math.random() - 0.5) * size);
-            sphere.scale.set(1, 0.7, 1);
-            sphere.castShadow = true; sphere.receiveShadow = true;
-            group.add(sphere);
-        }
+        const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 0), bushMat);
+        mesh.position.set(x, y + 0.5, z);
+        mesh.scale.set(1, 0.6, 1);
+        mesh.castShadow = true; mesh.receiveShadow = true;
         
-        const bushShape = new CANNON.Sphere(size * 0.8);
-        const bushBody = new CANNON.Body({ mass: 0, shape: bushShape, position: new CANNON.Vec3(x, y + size * 0.4, z)});
-        
-        this.objects.push({ mesh: group, body: bushBody, active: false, type: 'bush' });
+        const body = new CANNON.Body({ mass: 0, shape: new CANNON.Sphere(1.2), position: new CANNON.Vec3(x, y + 0.5, z)});
+        this.world.addBody(body);
+
+        this.objects.push({ mesh: mesh, active: false, type: 'bush' });
     }
 
     createGrass() {
-        const bladeGeo = new THREE.PlaneGeometry(0.2, 0.6, 1, 4);
-        bladeGeo.translate(0, 0.3, 0);
-
+        const bladeGeo = new THREE.PlaneGeometry(0.3, 0.8, 1, 3);
+        bladeGeo.translate(0, 0.4, 0);
         const material = new THREE.MeshStandardMaterial({ 
-            color: 0x3a5f0b, 
-            side: THREE.DoubleSide,
-            flatShading: true,
-            roughness: 1.0
+            color: 0x2d3b1a, side: THREE.DoubleSide, roughness: 1.0
         });
 
-        // --- NEW: GRASS WIND ANIMATION SHADER ---
         material.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = { value: 0 };
             shader.vertexShader = `
@@ -120,11 +110,8 @@ export class Vegetation {
             `.replace(
                 `#include <begin_vertex>`,
                 `#include <begin_vertex>
-                float speed = 1.5;
-                float heightFactor = position.y * 0.5;
-                float wind = sin(uTime * speed + instanceMatrix[3][0] * 0.1 + instanceMatrix[3][2] * 0.1) * 0.2;
-                transformed.x += wind * heightFactor;
-                transformed.z += wind * heightFactor * 0.5;
+                float wind = sin(uTime * 1.5 + position.x * 2.0 + position.z * 2.0) * (position.y * 0.3);
+                transformed.x += wind;
                 `
             );
             this.grassShader = shader;
@@ -132,25 +119,20 @@ export class Vegetation {
 
         const instancedMesh = new THREE.InstancedMesh(bladeGeo, material, this.grassCount);
         const dummy = new THREE.Object3D();
-
         for (let i = 0; i < this.grassCount; i++) {
-            const x = (Math.random() - 0.5) * 490;
-            const z = (Math.random() - 0.5) * 490;
-            if (this.isNearBase(x, z)) { dummy.position.set(0, -100, 0); } 
+            const x = (Math.random() - 0.5) * 900;
+            const z = (Math.random() - 0.5) * 900;
+            if (this.isNearBase(x, z)) { dummy.position.set(0, -500, 0); } 
             else {
                 const y = this.getYAt(x, z);
-                if (y === null) dummy.position.set(0, -100, 0);
-                else {
-                    dummy.position.set(x, y, z);
-                    dummy.rotation.y = Math.random() * Math.PI;
-                    const s = 0.7 + Math.random() * 0.6;
-                    dummy.scale.set(s, s, s);
-                }
+                dummy.position.set(x, y, z);
+                dummy.rotation.y = Math.random() * Math.PI;
+                const s = 0.8 + Math.random() * 0.8;
+                dummy.scale.set(s, s, s);
             }
             dummy.updateMatrix();
             instancedMesh.setMatrixAt(i, dummy.matrix);
         }
-
         instancedMesh.instanceMatrix.needsUpdate = true;
         instancedMesh.receiveShadow = true;
         this.scene.add(instancedMesh);
@@ -159,19 +141,11 @@ export class Vegetation {
 
     update(delta) {
         this.windTime += delta;
-
-        // Update Tree Sway
         this.objects.forEach(obj => {
             if (obj.active && obj.type === 'tree' && obj.leafGroup) {
-                const sway = Math.sin(this.windTime * 1.2 + obj.body.position.x * 0.1) * 0.03;
-                obj.leafGroup.rotation.z = sway;
-                obj.leafGroup.rotation.x = sway * 0.5;
+                obj.leafGroup.rotation.z = Math.sin(this.windTime * 0.8 + obj.mesh.position.x) * 0.05;
             }
         });
-
-        // Update Grass Wind
-        if (this.grassShader) {
-            this.grassShader.uniforms.uTime.value = this.windTime;
-        }
+        if (this.grassShader) this.grassShader.uniforms.uTime.value = this.windTime;
     }
 }
